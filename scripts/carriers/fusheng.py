@@ -18,7 +18,13 @@ from bs4 import BeautifulSoup
 from .base import (REQUEST_TIMEOUT, USER_AGENT, ParseError, TrackEvent,
                    TrackResult)
 
-URL = "https://tmsvendor.fs.com.tw/search-result?ship_num1={number}"
+import endpoints
+
+_EP = "fusheng"
+
+
+def _url() -> str:
+    return endpoints.get(_EP)["query"]
 # 官方表單接受 10-32 碼數字，但實務上 momo 配送單號為 12 碼；限縮以降低與其他家的撞號
 # （官方正則 \d{10,32} 過寬，會讓自動判別多打無謂請求）
 NUMBER_RE = re.compile(r"^\d{12}$")
@@ -27,7 +33,7 @@ NOT_FOUND_TEXT = "尚未能查詢"
 
 def parse_result_page(html: str, number: str) -> TrackResult:
     result = TrackResult(carrier="fusheng", number=number, found=False,
-                         source_url=URL.format(number=number))
+                         source_url=_url().format(number=number))
     if NOT_FOUND_TEXT in html:
         return result
 
@@ -57,7 +63,7 @@ class FushengAdapter:
         return bool(NUMBER_RE.match(number))
 
     def track(self, number: str) -> TrackResult:
-        resp = requests.get(URL.format(number=number), timeout=REQUEST_TIMEOUT,
+        resp = requests.get(_url().format(number=number), timeout=REQUEST_TIMEOUT,
                             headers={"User-Agent": USER_AGENT})
         resp.raise_for_status()
         return parse_result_page(resp.text, number)

@@ -18,9 +18,13 @@ from bs4 import BeautifulSoup
 from .base import (REQUEST_TIMEOUT, USER_AGENT, ParseError, TrackEvent,
                    TrackResult)
 
-BASE = "https://www.t-cat.com.tw/Inquire/"
-TRACE_URL = BASE + "Trace.aspx"
-DETAIL_URL = BASE + "TraceDetail.aspx?BillID={number}"
+import endpoints
+
+_EP = "tcat"
+
+
+def _url(key: str) -> str:
+    return endpoints.get(_EP)[key]
 # 宅急便包裹查詢號碼 12 碼數字（實測 2026-08-02 的真實單號與站方範例號皆 12 碼）
 NUMBER_RE = re.compile(r"^\d{12}$")
 
@@ -32,7 +36,7 @@ def _clean(node) -> str:
 def parse_summary_page(html: str, number: str) -> TrackResult:
     """Trace.aspx 摘要頁：目前狀態 + 資料登入時間 + 負責營業所（單筆）。"""
     result = TrackResult(carrier="tcat", number=number, found=False,
-                         source_url=TRACE_URL)
+                         source_url=_url("trace"))
     if "非有效單號" in html:
         return result
 
@@ -66,7 +70,7 @@ def parse_summary_page(html: str, number: str) -> TrackResult:
 def parse_detail_page(html: str, number: str) -> TrackResult:
     """TraceDetail.aspx `#resultTable`：完整歷程（表頭 貨態/資料登入時間/負責營業所）。"""
     result = TrackResult(carrier="tcat", number=number, found=False,
-                         source_url=DETAIL_URL.format(number=number))
+                         source_url=_url("detail").format(number=number))
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id="resultTable")
     if table is None:
@@ -98,7 +102,7 @@ class TcatAdapter:
     def track(self, number: str) -> TrackResult:
         s = requests.Session()
         s.headers["User-Agent"] = USER_AGENT
-        form_html = s.get(TRACE_URL, timeout=REQUEST_TIMEOUT).text
+        form_html = s.get(_url("trace"), timeout=REQUEST_TIMEOUT).text
         soup = BeautifulSoup(form_html, "html.parser")
 
         def hidden(name: str) -> str:
@@ -112,15 +116,15 @@ class TcatAdapter:
             data[f"ctl00$ContentPlaceHolder1$txtQuery{i}"] = ""
         data["ctl00$ContentPlaceHolder1$btnSend"] = "確認送出"
         summary = parse_summary_page(
-            s.post(TRACE_URL, data=data, timeout=REQUEST_TIMEOUT,
-                   headers={"Referer": TRACE_URL}).text, number)
+            s.post(_url("trace"), data=data, timeout=REQUEST_TIMEOUT,
+                   headers={"Referer": _url("trace")}).text, number)
         if not summary.found:
             return summary
 
         # 摘要只有最新一筆；詳細頁才有完整歷程，取得失敗時退回摘要
         try:
             detail = parse_detail_page(
-                s.get(DETAIL_URL.format(number=number),
+                s.get(_url("detail").format(number=number),
                       timeout=REQUEST_TIMEOUT).text, number)
         except requests.RequestException:
             return summary

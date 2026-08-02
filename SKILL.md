@@ -13,6 +13,9 @@ description: Track Taiwan parcel deliveries by tracking number. Use when the use
 python3 scripts/track.py <單號>                      # 自動判別貨運公司
 python3 scripts/track.py <單號> --carrier tcat       # 指定（建議：省下無謂請求）
 python3 scripts/track.py <單號> --json               # 機器可讀輸出
+python3 scripts/track.py --history                   # 列出查詢紀錄
+python3 scripts/track.py --forget <單號>             # 刪除某筆紀錄
+python3 scripts/track.py --endpoints                 # 列出目前生效的查詢網址
 ```
 
 `--carrier` 可用值：`tcat`（黑貓）、`kerrytj`（嘉里大榮）、`ecan`（宅配通）、`pchome`（網家速配）、`fusheng`（富昇/momo）、`spx`（蝦皮店到店）。
@@ -63,6 +66,22 @@ pip install playwright && playwright install chromium
 ```
 
 未安裝時只有 `spx` 不可用，其他三家照常。CLI 會直接告訴使用者缺哪一步。
+
+## 查詢紀錄（v0.2.0 起）
+
+查到結果時會記下「單號→哪家貨運」到 `~/.cache/parcel-kau-a/history.json`（權限 600）。
+**目的是隱私**：下次查同一單號直接送那一家，不必對五家逐一嘗試。查無資料不記錄。
+
+- 輸出出現 `（依查詢紀錄：…只查這一家）` = 這次只送了一家
+- 輸出出現 `（這筆看起來已完成，可用 --forget xxx 刪除紀錄）` → **主動問使用者要不要清掉**，
+  同意才跑 `--forget`。CLI 刻意不做互動提示（非互動硬規則 + agent 環境會卡死）
+- 使用者若表示某次查詢不想留紀錄，加 `--no-record`
+
+## 查詢網址失效時
+
+站方改版會讓網址失效，訊息會明講（例：`查詢網址回 404，該網址可能已失效`）。
+此時可用 `--endpoints` 看目前設定，並在 `~/.cache/parcel-kau-a/endpoints.json`
+覆寫新網址 —— **不需要改程式**。引導使用者回報 issue 讓預設值一起更新。
 
 ## 回報結果時
 

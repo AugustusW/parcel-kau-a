@@ -16,7 +16,13 @@ from bs4 import BeautifulSoup
 from .base import (REQUEST_TIMEOUT, USER_AGENT, ParseError, TrackEvent,
                    TrackResult)
 
-URL = "https://www.gopchome.com.tw/delivery/historyList/{number}"
+import endpoints
+
+_EP = "pchome"
+
+
+def _url() -> str:
+    return endpoints.get(_EP)["query"]
 # 12 碼數字（與黑貓/嘉里/宅配通撞號，自動判別需輪詢）
 NUMBER_RE = re.compile(r"^\d{12}$")
 NOT_FOUND_TEXT = "查無此單"
@@ -24,7 +30,7 @@ NOT_FOUND_TEXT = "查無此單"
 
 def parse_history_page(html: str, number: str) -> TrackResult:
     result = TrackResult(carrier="pchome", number=number, found=False,
-                         source_url=URL.format(number=number))
+                         source_url=_url().format(number=number))
     if NOT_FOUND_TEXT in html:
         return result
 
@@ -55,7 +61,7 @@ class PchomeAdapter:
         return bool(NUMBER_RE.match(number))
 
     def track(self, number: str) -> TrackResult:
-        resp = requests.get(URL.format(number=number), timeout=REQUEST_TIMEOUT,
+        resp = requests.get(_url().format(number=number), timeout=REQUEST_TIMEOUT,
                             headers={"User-Agent": USER_AGENT})
         resp.raise_for_status()
         return parse_history_page(resp.text, number)

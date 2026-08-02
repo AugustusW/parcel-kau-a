@@ -6,24 +6,26 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import quote
-
 import requests
 from bs4 import BeautifulSoup
 
 from .base import (REQUEST_TIMEOUT, USER_AGENT, ParseError, TrackEvent,
                    TrackResult)
 
-BASE = "https://query2.e-can.com.tw/"
-POST_URL = BASE + quote("多筆查件_oo4o.asp")
-SOURCE_URL = BASE + quote("多筆查件A.htm")
+import endpoints
+
+_EP = "ecan"
+
+
+def _url(key: str) -> str:
+    return endpoints.get(_EP)[key]
 # 宅配單號 12 碼數字（表單 maxLength=12）
 NUMBER_RE = re.compile(r"^\d{12}$")
 
 
 def parse_result_page(html: str, number: str) -> TrackResult:
     result = TrackResult(carrier="ecan", number=number, found=False,
-                         source_url=SOURCE_URL)
+                         source_url=_url("source"))
     if "查無資料" in html:
         return result
 
@@ -65,7 +67,7 @@ class EcanAdapter:
         data["txtMainID_1"] = number
         data["B1"] = " 查詢 "
         resp = requests.post(
-            POST_URL, data=data, timeout=REQUEST_TIMEOUT,
-            headers={"User-Agent": USER_AGENT, "Referer": SOURCE_URL})
+            _url("post"), data=data, timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": USER_AGENT, "Referer": _url("source")})
         resp.encoding = "big5"  # 站方不送 charset，requests 會猜錯
         return parse_result_page(resp.text, number)

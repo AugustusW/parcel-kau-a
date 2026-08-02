@@ -25,9 +25,15 @@ import requests
 from .base import (REQUEST_TIMEOUT, CarrierUnavailable, ParseError, TrackEvent,
                    TrackResult)
 
-API_BASE = "https://api.17track.net/track/v2.4"
+import endpoints
+
+
+def _url(key: str) -> str:
+    return endpoints.get("17track")[key]
+
+
 API_KEY_ENV = "PARCEL_KAU_A_17TRACK_KEY"
-SOURCE_URL = "https://t.17track.net/"
+
 
 # 17TRACK 數字 carrier code（2026-08-02 自官方 apicarrier.all.json 擷取）
 CARRIER_CODES: dict[str, int] = {
@@ -50,7 +56,7 @@ QUOTA_ERROR_CODES = {-18019908, -18019907}
 NOT_REGISTERED_CODE = -18019902
 
 _KEY_HINT = (
-    f"17TRACK 需要 API key：於 https://api.17track.net 註冊後，"
+    f"17TRACK 需要 API key：於 {_url('signup')} 註冊後，"
     f"把 key 設進環境變數 {API_KEY_ENV}（免費額度 200 筆，用量計在你自己的帳號）")
 
 
@@ -79,7 +85,7 @@ def _quota_message(payload: dict) -> str | None:
         err = item.get("error") or {}
         if err.get("code") in QUOTA_ERROR_CODES:
             return (f"17TRACK 額度不足或已用盡（{err.get('message', '')}）—— "
-                    f"請至 https://api.17track.net 查看你的帳號用量")
+                    f"請至 {_url('signup')} 查看你的帳號用量")
     return None
 
 
@@ -93,7 +99,7 @@ def parse_response(payload: dict, number: str) -> TrackResult:
         raise ParseError("17TRACK 回應格式非預期，請回報 issue")
 
     result = TrackResult(carrier="17track", number=number, found=False,
-                         source_url=SOURCE_URL)
+                         source_url=_url('source'))
     for item in data.get("accepted") or []:
         if str(item.get("number")) != number:
             continue
@@ -132,14 +138,14 @@ class SeventeenTrackAdapter:
         # register 對已登錄過的單號回 rejected(-18019901)，不額外扣額度；
         # 但 HTTP 層錯誤（key 失效 401/403、限流 429）必須當場講清楚，
         # 否則會被第二支呼叫的 RequestException 蓋成籠統的「連線失敗」。
-        reg = requests.post(f"{API_BASE}/register", json=body, headers=headers,
+        reg = requests.post(f"{_url('api_base')}/register", json=body, headers=headers,
                             timeout=REQUEST_TIMEOUT)
         self._raise_for_auth(reg)
         quota = _quota_message(reg.json() if reg.content else {})
         if quota:
             raise CarrierUnavailable(quota)
 
-        resp = requests.post(f"{API_BASE}/gettrackinfo", json=body,
+        resp = requests.post(f"{_url('api_base')}/gettrackinfo", json=body,
                              headers=headers, timeout=REQUEST_TIMEOUT)
         self._raise_for_auth(resp)
         resp.raise_for_status()

@@ -12,8 +12,13 @@ import requests
 from .base import (REQUEST_TIMEOUT, USER_AGENT, ParseError, TrackEvent,
                    TrackResult)
 
-API_URL = "https://www.kerrytj.com/api/Tracking/GetTracking"
-SOURCE_URL = "https://www.kerrytj.com/zh/checking"
+import endpoints
+
+_EP = "kerrytj"
+
+
+def _url(key: str) -> str:
+    return endpoints.get(_EP)[key]
 # 託運單號 12 碼數字（官網表單提示；UNVERIFIED: 需真實單號校準是否有其他長度）
 NUMBER_RE = re.compile(r"^\d{12}$")
 
@@ -28,7 +33,7 @@ def _fmt(date_val, time_val) -> str:
 
 def parse_tracking_response(payload: dict, number: str) -> TrackResult:
     result = TrackResult(carrier="kerrytj", number=number, found=False,
-                         source_url=SOURCE_URL)
+                         source_url=_url("source"))
     # 「查無」時站方仍回 list + errTrackNo；兩個 key 都不在 = schema 變了
     if "list" not in payload and "errTrackNo" not in payload:
         raise ParseError("嘉里大榮 API 回應格式已變，請回報 issue")
@@ -58,7 +63,7 @@ class KerrytjAdapter:
         blanks = [{"idxTxt": t, "value": ""} for t in ("二", "三", "四", "五")]
         payload = {"trackType": "0",
                    "trackNo": [{"idxTxt": "一", "value": number}] + blanks}
-        resp = requests.post(API_URL, json=payload, timeout=REQUEST_TIMEOUT,
+        resp = requests.post(_url("api"), json=payload, timeout=REQUEST_TIMEOUT,
                              headers={"User-Agent": USER_AGENT})
         resp.raise_for_status()
         return parse_tracking_response(resp.json(), number)

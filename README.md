@@ -42,7 +42,9 @@ repeat per parcel                     --json to pipe onward
 - ✓ Network failures degrade per-carrier — a timeout at one site doesn't abort the run
 - ✓ Offline test suite: parsers are pinned to captured fixtures, no network needed to run tests
 - ✓ Optional 17TRACK bridge for the four CAPTCHA-blocked couriers — **your** API key, never called unless you ask for it
-- ✓ Nothing is stored: no cache, no history file, no telemetry
+- ✓ Remembers which courier a number belongs to, so repeat lookups go to **one** company instead
+  of five — a local record you can list and delete (`--history`, `--forget`)
+- ✓ No telemetry, no analytics, nothing leaves your machine except the courier request itself
 
 ## Install
 
@@ -76,6 +78,11 @@ python3 scripts/track.py 900000000001                    # auto-detect
 python3 scripts/track.py 900000000001 --carrier tcat     # go straight to one
 python3 scripts/track.py TW254414081298F --carrier spx   # Shopee SPX
 python3 scripts/track.py 900000000001 --json             # machine-readable
+
+python3 scripts/track.py --history                       # what has been remembered
+python3 scripts/track.py --forget 900000000001           # forget one number
+python3 scripts/track.py --forget-all                    # forget everything
+python3 scripts/track.py --endpoints                     # show the URLs in effect
 ```
 
 ```text
@@ -120,10 +127,13 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 `--carrier` values in this mode: `chunghwa-post`, `famiport`, `seven-eleven`, `hct` (plus the
 five already covered directly, if you'd rather route them through 17TRACK).
 
-**What it costs you.** 17TRACK charges per *registered* number: `register` deducts one quota,
-while `gettrackinfo` and webhook pushes deduct nothing — so re-checking a number you've already
-looked up is free, and the free allowance (200 one-time, for accounts created after 2026-01-07)
-means 200 distinct parcels. Past that, 17TRACK sells prepaid annual packs only, starting at
+**What it costs you — and what it keeps.** 17TRACK charges per *registered* number: `register`
+deducts one quota, while `gettrackinfo` and webhook pushes deduct nothing — so re-checking a
+number you've already looked up is free, and the free allowance (200 one-time, for accounts
+created after 2026-01-07) means 200 distinct parcels. The reason repeat lookups are free is that
+the number **stays registered in your 17TRACK account** and they keep tracking it for you. That
+is the real difference from the direct six: a direct lookup asks a question and leaves, while a
+17TRACK lookup files the number with a third party until you delete it. Past that, 17TRACK sells prepaid annual packs only, starting at
 US$119 for 5,000 quota, expiring after 12 months; there is no pay-as-you-go tier. This adapter
 deliberately does not call `getRealTimeTrackInfo`, whose `Instant` cache level costs 10 quota per
 call.
@@ -165,8 +175,17 @@ shape. The couriers are not similar under the hood:
 
 ## Privacy
 
-- **No storage.** No cache, no history, no logs, no telemetry. Each query is a live request and
-  the result is printed, not saved.
+- **One thing is stored, and it is there to reduce disclosure.** A successful lookup records
+  `number → courier` (plus its latest status and timestamps) in `~/.cache/parcel-kau-a/history.json`,
+  mode `0600`. The point is the next lookup: with a record, the number goes to **one** courier
+  instead of being tried against five. Failed lookups are never recorded, `--no-record` skips
+  writing, `--history` lists everything, and `--forget` / `--forget-all` delete it.
+- **Where that file lives, precisely.** On macOS, Time Machine excludes `~/Library/Caches` but
+  **not** `~/.cache` — so this file is included in backups. If a number shouldn't persist anywhere,
+  use `--no-record`, or `--forget` it once the parcel arrives (the CLI points this out for you when
+  a parcel looks delivered).
+- **No telemetry.** No analytics, no logs, no phoning home. Each query is a live request whose
+  result is printed.
 - **Auto-detection sends the number to couriers that don't own it.** T-cat, Kerry TJ, e-can,
   PChome Express, and Fusheng all issue 12-digit numeric tracking numbers, so a bare number with
   no `--carrier` is tried against them in turn until one reports a hit — up to five companies
@@ -193,6 +212,23 @@ shape. The couriers are not similar under the hood:
 - Each courier's own retention limit applies (see [Coverage](#coverage)) — older parcels return
   "not found" from the site itself, not from this skill.
 
+## When a courier changes its site
+
+Scrapers break; that is the deal. Every URL this skill uses lives in `scripts/endpoints.py`, and
+each one can be overridden per key without touching code — write only the keys you want to change
+into `~/.cache/parcel-kau-a/endpoints.json`:
+
+```json
+{ "pchome": { "query": "https://www.gopchome.com.tw/whatever/{number}" } }
+```
+
+`--endpoints` prints what is currently in effect, along with the override file's path. A broken
+override file falls back to the defaults with a warning rather than taking the tool down.
+
+Error messages distinguish the cases so you know where to look: a `404` says the URL is likely
+stale and points at the config, a `5xx` says the courier's server is having trouble, and timeouts
+read differently from refused connections.
+
 ## Develop
 
 ```bash
@@ -205,7 +241,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.1.1 ([CHANGELOG](./CHANGELOG.md)) — 60 offline unit tests. Verification status differs per
+v0.2.0 ([CHANGELOG](./CHANGELOG.md)) — 109 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

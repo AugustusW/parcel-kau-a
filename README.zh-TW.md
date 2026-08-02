@@ -36,7 +36,8 @@
 - ✓ 網路錯誤逐家降級——某站逾時不會中斷整趟查詢
 - ✓ 離線測試：parser 對照擷取下來的 fixtures，跑測試不需要網路
 - ✓ 選配 17TRACK 橋接，補上被驗證碼擋住的四家 —— 用**你自己的** API key，不主動呼叫
-- ✓ 什麼都不存：無快取、無歷史檔、無遙測
+- ✓ 記住單號屬於哪家，之後重查只送**一家**而不是五家——紀錄可列出、可刪除（`--history`、`--forget`）
+- ✓ 無遙測、無分析回報；除了向貨運公司發出的那個請求，沒有東西離開你的電腦
 
 ## 安裝
 
@@ -69,6 +70,11 @@ python3 scripts/track.py 900000000001                    # 自動判別
 python3 scripts/track.py 900000000001 --carrier tcat     # 直接指定
 python3 scripts/track.py TW254414081298F --carrier spx   # 蝦皮店到店
 python3 scripts/track.py 900000000001 --json             # 機器可讀
+
+python3 scripts/track.py --history                       # 看記住了哪些
+python3 scripts/track.py --forget 900000000001           # 忘掉某一筆
+python3 scripts/track.py --forget-all                    # 全部忘掉
+python3 scripts/track.py --endpoints                     # 看目前生效的查詢網址
 ```
 
 ```text
@@ -107,7 +113,7 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 
 此模式的 `--carrier` 可用值：`chunghwa-post`、`famiport`、`seven-eleven`、`hct`（另有已直連的五家，若你想改走 17TRACK 也可指定）。
 
-**費用怎麼算**：17TRACK 按「登錄的單號數」計費——`register` 扣 1 筆額度，`gettrackinfo` 與 webhook 推送不扣，所以查過的單號再查是免費的，免費額度（2026-01-07 後新帳號一次性 200 筆）等於 200 個不同包裹。用完之後只能整包預購年度額度，最低 US$119 買 5,000 筆、12 個月到期，沒有隨用隨付方案。本 adapter 刻意不呼叫 `getRealTimeTrackInfo`——它的 `Instant` 快取層級一次要扣 10 筆額度。
+**費用怎麼算，以及它留下什麼**：17TRACK 按「登錄的單號數」計費——`register` 扣 1 筆額度，`gettrackinfo` 與 webhook 推送不扣，所以查過的單號再查是免費的，免費額度（2026-01-07 後新帳號一次性 200 筆）等於 200 個不同包裹。重查之所以免費，是因為那組單號**留在你的 17TRACK 帳號裡**、由他們持續替你追蹤。這也是它與直連六家最本質的差別：直連是問完就走，走 17TRACK 則是把單號寄存在第三方，直到你自己刪除。用完之後只能整包預購年度額度，最低 US$119 買 5,000 筆、12 個月到期，沒有隨用隨付方案。本 adapter 刻意不呼叫 `getRealTimeTrackInfo`——它的 `Instant` 快取層級一次要扣 10 筆額度。
 
 刻意設下的限制：
 
@@ -133,7 +139,9 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 
 ## 隱私
 
-- **什麼都不存**：無快取、無歷史、無 log、無遙測。每次查詢都是即時請求，結果印出來而不落地。
+- **有一樣東西會存，而它的目的正是減少揭露**：查到結果時會把「單號→貨運公司」（連同最新狀態與時間）記進 `~/.cache/parcel-kau-a/history.json`，權限 `0600`。重點在下一次查詢：有紀錄就只送**一家**，不必對五家逐一嘗試。查無資料不會記錄；`--no-record` 可略過寫入，`--history` 列出全部，`--forget` / `--forget-all` 刪除。
+- **那個檔案放哪，講精確一點**：macOS 的 Time Machine 只自動排除 `~/Library/Caches`，**不會**排除 `~/.cache`——所以這個檔案會進備份。如果某個單號不想留在任何地方，用 `--no-record`，或等包裹到了用 `--forget` 刪掉（包裹看似送達時 CLI 會主動提醒你這件事）。
+- **無遙測**：沒有分析回報、沒有 log、不會回傳任何東西。每次查詢都是即時請求，結果印出來。
 - **自動判別會把單號送給不是它主人的貨運公司**：黑貓、嘉里大榮、宅配通、網家速配、富昇的單號都是 12 碼純數字，所以不加 `--carrier` 時會依序送去查、直到某一家回報查得到——最多有五家看到這組只屬於其中一家的單號。每個請求都與你在該站公開表單手動查詢時相同，各站也不會知道你是誰，但單號本身的揭露範圍比直覺想像的廣。**加上 `--carrier` 就只會送給一家。** CLI 會在送出第一個請求之前先列出即將查詢的貨運公司，所以這件事在使用當下就看得到，不是只寫在這裡。
 - 在 Claude Code 中，回傳的時間軸會進入你自己的 Claude session，如同任何指令輸出。
 - **單號不是匿名資料**：在多數站台上它可辨識一件包裹，時間軸還可能含門市或營業所名稱。請比照收據對待。
@@ -146,6 +154,18 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 - **蝦皮**：只使用 `spx.tw/` 的公開查詢框；其 robots.txt 標示 disallow 的路徑不會造訪。
 - 各站自有的資料保留期限適用（見[支援範圍](#支援範圍)）——超過期限的包裹是站方本身回「查無」，非本 skill 的問題。
 
+## 貨運公司改版時
+
+爬蟲會壞，這是本質。這個 skill 用到的每個網址都放在 `scripts/endpoints.py`，而且可以**逐鍵覆寫、完全不動程式**——把要改的鍵寫進 `~/.cache/parcel-kau-a/endpoints.json` 即可：
+
+```json
+{ "pchome": { "query": "https://www.gopchome.com.tw/whatever/{number}" } }
+```
+
+`--endpoints` 會印出目前生效的值與覆寫檔路徑。覆寫檔壞掉時會退回預設並印警告，不會讓工具整個不能用。
+
+錯誤訊息也分類了，讓你知道該往哪查：`404` 表示網址可能已失效並指向設定檔、`5xx` 表示對方伺服器有問題、連線逾時與連不上則分開顯示。
+
 ## 開發
 
 ```bash
@@ -157,7 +177,7 @@ Parser 對照 `tests/fixtures/` 內擷取下來的回應測試，每份都附 `*
 
 ## 狀態
 
-v0.1.1（[CHANGELOG](./CHANGELOG.md)）——60 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
+v0.2.0（[CHANGELOG](./CHANGELOG.md)）——109 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
 
 | 貨運 | 查無資料路徑 | 有資料路徑 |
 |---|---|---|

@@ -1,6 +1,8 @@
 """共用資料模型與 adapter 介面。
 
-單號屬個資鄰接資料：本 skill 不落地任何查詢紀錄（無 cache、無 log），每次現查。
+單號屬個資鄰接資料。adapter 層本身不落地任何東西（無 cache、無 log），每次現查；
+唯一的落地是 history.py 的查詢紀錄（單號→貨運對應，用來避免輪巡多家），
+詳見該模組與 README 隱私段。
 """
 from __future__ import annotations
 

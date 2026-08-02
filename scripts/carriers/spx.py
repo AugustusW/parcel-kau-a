@@ -16,7 +16,11 @@ import re
 from .base import (REQUEST_TIMEOUT, CarrierUnavailable, ParseError,
                    TrackEvent, TrackResult)
 
-SOURCE_URL = "https://spx.tw/"
+import endpoints
+
+
+def _source() -> str:
+    return endpoints.get("spx")["source"]
 # SPX 單號：TW 開頭（UNVERIFIED: 長度以 2026-08-02 觀察的 15 碼為準，需真實單號校準）
 NUMBER_RE = re.compile(r"^TW[0-9A-Z]{10,20}$", re.IGNORECASE)
 
@@ -36,7 +40,7 @@ def build_result(rows: list[dict], number: str) -> TrackResult:
     events = [TrackEvent(time=r.get("time", ""), status=r.get("status", ""),
                          location=r.get("location")) for r in rows]
     return TrackResult(carrier="spx", number=number, found=bool(events),
-                       events=events, source_url=SOURCE_URL)
+                       events=events, source_url=_source())
 
 
 class SpxAdapter:
@@ -71,7 +75,7 @@ class SpxAdapter:
                 # 與其他 adapter 共用同一個 10s 上限（plan Global Constraints）
                 page.set_default_timeout(REQUEST_TIMEOUT * 1000)
                 page.set_default_navigation_timeout(REQUEST_TIMEOUT * 1000)
-                page.goto(SOURCE_URL, wait_until="domcontentloaded")
+                page.goto(_source(), wait_until="domcontentloaded")
                 box = page.get_by_role("textbox").first
                 box.fill(number)
                 page.get_by_role("button", name="追蹤").click()
