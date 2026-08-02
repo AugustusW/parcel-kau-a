@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.2.3] - 2026-08-02
+
+The Windows CI added in v0.2.2 failed on its first run. That was the point of adding it.
+
+### Fixed
+- **The test suite could not run on Windows.** Tests read fixtures and the history file with
+  `read_text()` and no encoding, so Python used the platform default — cp1252 on the CI runner,
+  cp950 on a Traditional Chinese install — and every UTF-8 fixture raised `UnicodeDecodeError`.
+  The shipped code was never affected: `history.py` and `endpoints.py` have always passed
+  `encoding="utf-8"` explicitly. Only the tests were wrong, which is why macOS never noticed.
+
+### Added
+- A repo-wide guard asserting no `read_text`/`write_text`/`open` call relies on the platform's
+  default encoding. It walks the AST rather than matching text: `write_text(json.dumps(x),
+  encoding="utf-8")` closes `json.dumps`'s parenthesis first, and the regex version of this guard
+  reported four false positives on its own first run before being rewritten.
+
+### Notes
+- 133 offline unit tests.
+
 ## [0.2.2] - 2026-08-02
 
 Windows is now tested rather than merely badged.

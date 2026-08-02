@@ -61,16 +61,16 @@ def test_record_file_is_created_on_every_platform(home):
 
 def test_record_stores_only_expected_fields(home):
     history.record(_found())
-    entry = json.loads(history.path().read_text())["135079340105"]
+    entry = json.loads(history.path().read_text(encoding="utf-8"))["135079340105"]
     assert set(entry) == {"carrier", "last_status", "last_event_time",
                           "first_seen", "last_checked", "looks_complete"}
 
 
 def test_first_seen_survives_recheck_but_last_checked_moves(home):
     history.record(_found(status="配送中"))
-    first = json.loads(history.path().read_text())["135079340105"]
+    first = json.loads(history.path().read_text(encoding="utf-8"))["135079340105"]
     history.record(_found(status="順利送達"))
-    second = json.loads(history.path().read_text())["135079340105"]
+    second = json.loads(history.path().read_text(encoding="utf-8"))["135079340105"]
     assert second["first_seen"] == first["first_seen"]
     assert second["last_checked"] >= first["last_checked"]
     assert second["last_status"] == "順利送達"
@@ -107,16 +107,16 @@ def test_forget_all_clears_everything(home):
 def test_corrupt_file_degrades_to_no_history(home, capsys):
     """紀錄毀損不可讓查詢失敗——視為無紀錄繼續。"""
     history.path().parent.mkdir(parents=True, exist_ok=True)
-    history.path().write_text("{ this is not json")
+    history.path().write_text("{ this is not json", encoding="utf-8")
     assert history.lookup("135079340105") is None
     assert history.entries() == {}
 
 
 def test_corrupt_file_is_not_silently_overwritten_on_read(home):
     history.path().parent.mkdir(parents=True, exist_ok=True)
-    history.path().write_text("{ broken")
+    history.path().write_text("{ broken", encoding="utf-8")
     history.lookup("x")
-    assert history.path().read_text() == "{ broken", "唯讀操作不該動使用者的檔案"
+    assert history.path().read_text(encoding="utf-8") == "{ broken", "唯讀操作不該動使用者的檔案"
 
 
 def test_write_is_atomic_leaving_no_temp_files(home):

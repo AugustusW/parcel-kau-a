@@ -267,7 +267,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.2.2 ([CHANGELOG](./CHANGELOG.md)) — 132 offline unit tests. Verification status differs per
+v0.2.2 ([CHANGELOG](./CHANGELOG.md)) — 133 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

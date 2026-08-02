@@ -117,3 +117,38 @@ def test_requirements_file_is_ascii_only():
     except UnicodeDecodeError as e:
         bad = raw[e.start:e.end].decode("utf-8", "replace")
         raise AssertionError(f"requirements.txt 含非 ASCII 字元 {bad!r}（offset {e.start}）")
+
+
+def test_no_file_read_or_write_relies_on_the_platform_default_encoding():
+    """未指定 encoding 的檔案讀寫在 Windows 會用 cp1252/cp950 → UnicodeDecodeError。
+
+    產品程式碼一直是對的；掛掉的是測試自己（2026-08-02 Windows CI 首跑抓到）。
+    用測試守住整個 repo，因為這種疏漏靠 review 看不出來——少寫一個參數而已。
+
+    用 AST 而非正則：`p.write_text(json.dumps(x), encoding="utf-8")` 的第一個 `)`
+    屬於 json.dumps，正則會在那裡斷掉而誤報（第一版就是這樣自己絆倒）。
+    """
+    import ast
+
+    root = Path(__file__).resolve().parent.parent
+    offenders = []
+    for py in sorted(list((root / "scripts").rglob("*.py")) + list((root / "tests").glob("*.py"))):
+        tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                    else getattr(node.func, "id", ""))
+            if name not in ("read_text", "write_text", "open"):
+                continue
+            kwargs = {k.arg for k in node.keywords}
+            if "encoding" in kwargs:
+                continue
+            if name == "open":
+                mode = next((a.value for a in node.args[1:2]
+                             if isinstance(a, ast.Constant)), "r")
+                if "b" in str(mode):      # 二進位模式沒有編碼問題
+                    continue
+            offenders.append(f"{py.relative_to(root)}:{node.lineno} {name}()")
+    assert not offenders, ("以下檔案操作未指定 encoding（Windows 會用系統 locale）：\n"
+                           + "\n".join(offenders))

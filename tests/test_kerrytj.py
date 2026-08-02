@@ -17,7 +17,7 @@ def test_detect_accepts_12_digit_numbers():
 
 
 def test_notfound_response_parses_as_not_found():
-    payload = json.loads((FIXTURES / "kerrytj_notfound.json").read_text())
+    payload = json.loads((FIXTURES / "kerrytj_notfound.json").read_text(encoding="utf-8"))
     result = parse_tracking_response(payload, number="901234567890")
     assert result.found is False
     assert result.events == []

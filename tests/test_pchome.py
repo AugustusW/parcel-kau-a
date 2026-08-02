@@ -17,7 +17,7 @@ def test_detect_accepts_12_digit_numbers():
 
 def test_notfound_page_parses_as_not_found():
     """站方以「查無此單」表示查無，HTTP 仍是 200。"""
-    html = (FIXTURES / "pchome_notfound.html").read_text()
+    html = (FIXTURES / "pchome_notfound.html").read_text(encoding="utf-8")
     result = parse_history_page(html, number="900000000002")
     assert result.found is False
     assert result.events == []

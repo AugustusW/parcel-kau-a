@@ -20,7 +20,7 @@ def test_detect_accepts_12_digit_numbers():
 
 
 def test_notfound_page_parses_as_not_found():
-    html = (FIXTURES / "fs_notfound.html").read_text()
+    html = (FIXTURES / "fs_notfound.html").read_text(encoding="utf-8")
     result = parse_result_page(html, number=NUM)
     assert result.found is False
     assert result.events == []
@@ -28,7 +28,7 @@ def test_notfound_page_parses_as_not_found():
 
 def test_real_found_page_parses_full_history():
     """真實回應：4 筆歷程，每筆為「時間 狀態 站點」以 &nbsp 分隔的 <li>。"""
-    html = (FIXTURES / "fs_found.html").read_text()
+    html = (FIXTURES / "fs_found.html").read_text(encoding="utf-8")
     result = parse_result_page(html, number=NUM)
     assert result.found is True
     assert len(result.events) == 4
