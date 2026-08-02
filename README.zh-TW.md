@@ -139,7 +139,7 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 
 ## 隱私
 
-- **有一樣東西會存，而它的目的正是減少揭露**：**直連**查到結果時會把「單號→貨運公司」（連同最新狀態與時間）記進 `~/.cache/parcel-kau-a/history.json`，權限 `0600`。走 `--via-17track` 的查詢刻意**不記錄**：把 carrier 存成 `17track` 會讓之後每次自動判別都去打付費 API。（因此 `--no-record` 在那條路上沒有作用。）重點在下一次查詢：有紀錄就只送**一家**，不必對五家逐一嘗試。查無資料不會記錄；`--no-record` 可略過寫入，`--history` 列出全部，`--forget` / `--forget-all` 刪除。
+- **有一樣東西會存，而它的目的正是減少揭露**：**直連**查到結果時會把「單號→貨運公司」（連同最新狀態與時間）記進 `~/.cache/parcel-kau-a/history.json`。檔案以 `0600` 建立——**POSIX 會落實，Windows 不會**：Windows 沒有 POSIX 權限位元，那裡的保護程度取決於你使用者目錄本身的 ACL，不是本工具給的「僅擁有者可讀」保證。走 `--via-17track` 的查詢刻意**不記錄**：把 carrier 存成 `17track` 會讓之後每次自動判別都去打付費 API。（因此 `--no-record` 在那條路上沒有作用。）重點在下一次查詢：有紀錄就只送**一家**，不必對五家逐一嘗試。查無資料不會記錄；`--no-record` 可略過寫入，`--history` 列出全部，`--forget` / `--forget-all` 刪除。
 - **那個檔案放哪，講精確一點**：macOS 的 Time Machine 只自動排除 `~/Library/Caches`，**不會**排除 `~/.cache`——所以這個檔案會進備份。如果某個單號不想留在任何地方，用 `--no-record`，或等包裹到了用 `--forget` 刪掉（包裹看似送達時 CLI 會主動提醒你這件事）。
 - **無遙測**：沒有分析回報、沒有 log、不會回傳任何東西。每次查詢都是即時請求，結果印出來。
 - **自動判別會把單號送給不是它主人的貨運公司**：黑貓、嘉里大榮、宅配通、網家速配、富昇的單號都是 12 碼純數字，所以不加 `--carrier` 時會依序送去查、直到某一家回報查得到——最多有五家看到這組只屬於其中一家的單號。每個請求都與你在該站公開表單手動查詢時相同，各站也不會知道你是誰，但單號本身的揭露範圍比直覺想像的廣。**加上 `--carrier` 就只會送給一家。** CLI 會在送出第一個請求之前先列出即將查詢的貨運公司，所以這件事在使用當下就看得到，不是只寫在這裡。
@@ -168,6 +168,17 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 
 錯誤訊息也分類了，讓你知道該往哪查：`404` 表示網址可能已失效並指向設定檔、`5xx` 表示對方伺服器有問題、連線逾時與連不上則分開顯示。
 
+## 平台差異
+
+開發與日常使用在 macOS，Linux 由 CI 覆蓋。有兩件事在其他平台不一樣，講明比含糊帶過好：
+
+- **檔案權限**：紀錄檔以 `0600` 寫入。POSIX 會落實。Windows 不理會 POSIX 權限位元，該檔改為繼承使用者目錄的 ACL——在一台真實 Windows 上實測到的 ACL 包含 `CodexSandboxUsers:(RX)`，也就是**不只你讀得到**。請把 `0600` 當成僅限 POSIX 的保證。在意內容的話用 `--no-record`，或包裹到了就 `--forget`。
+- **存放位置**：`~/.cache/parcel-kau-a/` 沿用 XDG 慣例。在 Windows 上會解析成 `C:\Users\你\.cache\parcel-kau-a\`，能運作但不是該平台自己的慣例（`%LOCALAPPDATA%`）。想放別處可設 `PARCEL_KAU_A_HOME`。
+- **執行指令**：Windows 上用 `python` 而不是 `python3`——後者是 Microsoft Store 的捷徑，執行會回 9009「Python was not found」。
+- **安裝**：`requirements.txt` 刻意只用 ASCII：pip 以系統 locale 編碼讀取該檔，非 ASCII 註解會讓繁中 Windows（cp950）安裝失敗。
+
+CI 在 Linux 上跑 Python 3.10–3.13、在 Windows 上跑 3.10 與 3.13。
+
 ## 開發
 
 ```bash
@@ -179,7 +190,7 @@ Parser 對照 `tests/fixtures/` 內擷取下來的回應測試，每份都附 `*
 
 ## 狀態
 
-v0.2.1（[CHANGELOG](./CHANGELOG.md)）——129 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
+v0.2.2（[CHANGELOG](./CHANGELOG.md)）——132 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
 
 | 貨運 | 查無資料路徑 | 有資料路徑 |
 |---|---|---|

@@ -41,6 +41,12 @@ def parse_summary_page(html: str, number: str) -> TrackResult:
         return result
 
     soup = BeautifulSoup(html, "html.parser")
+    # 「格式正確但查不到」是獨立的一頁：既沒有結果表也沒有查詢表單，若不先認出它，
+    # 下方的改版判準會把正常的查無資料誤報成站方改版。
+    # （與 tcat_invalid.html 的「格式就錯」不同頁，2026-08-02 Windows 實測回報）
+    if soup.find(id="ContentPlaceHolder1_tblNotFound") or "尚未有查詢到" in html:
+        return result
+
     boxes = soup.select(".orderlist-box")
     # 查詢頁有表單、結果頁有 orderlist-box；兩者皆無 = 站方改版
     if not boxes and not soup.find("input", {"name": lambda v: v and "txtQuery1" in v}):

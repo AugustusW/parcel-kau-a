@@ -3,6 +3,43 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.2.2] - 2026-08-02
+
+Windows is now tested rather than merely badged.
+
+### Fixed
+- **The `0600` claim was written as if it held everywhere.** It holds on POSIX; Windows has no
+  POSIX permission bits, so there the history file is protected by whatever ACL the user profile
+  directory carries — not an owner-only guarantee this tool makes. Both READMEs now say which
+  platform gets which, and a new Platform notes section covers the `~/.cache` path being
+  XDG-conventional rather than Windows-conventional.
+- The owner-only permission tests are marked POSIX-only with the reason stated, instead of failing
+  or being silently skipped on Windows. A platform-independent test covers what is common to all:
+  the file is created and reads back.
+
+- **T-cat reported "the page structure changed" for numbers that simply weren't found.** A
+  well-formed but unknown number gets its own page (`#ContentPlaceHolder1_tblNotFound`) carrying
+  neither the result list nor the query form, so the site-changed heuristic misfired. The existing
+  fixture covered a *malformed* number, which returns a different page — hence no test caught it.
+  Found by a user running the skill on Windows.
+- **`requirements.txt` could not be read by pip on a Traditional Chinese Windows.** pip decodes it
+  with the system locale, so the Chinese comments raised `UnicodeDecodeError` under cp950. The
+  file is ASCII-only now.
+- **SKILL.md told Windows users to run `python3`**, which on Windows is a Microsoft Store alias
+  that exits 9009. Windows invocation is documented separately.
+
+### Added
+- **CI now runs on Windows** (3.10 and 3.13) alongside Linux (3.10–3.13). The README has carried a
+  Windows badge since v0.1.0 without a single Windows run behind it; either verify it or drop it.
+- A test asserting `requirements.txt` is ASCII-only, because the first attempt at that fix still
+  left one Chinese phrase behind — this is not something to check by eye.
+
+### Notes
+- 132 offline unit tests.
+- Verified on a real Windows 11 install (Python 3.12.10): tracking, `--history`, and `--endpoints`
+  all behave as on macOS, and Chinese output renders correctly in PowerShell. The four issues
+  fixed above were found by that install, not by CI.
+
 ## [0.2.1] - 2026-08-02
 
 External review of v0.2.0. Every finding checked against the code before acting; all five were real.

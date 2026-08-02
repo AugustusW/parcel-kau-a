@@ -234,6 +234,27 @@ Error messages distinguish the cases so you know where to look: a `404` says the
 stale and points at the config, a `5xx` says the courier's server is having trouble, and timeouts
 read differently from refused connections.
 
+## Platform notes
+
+Developed and used on macOS; Linux is covered by CI. Two things differ elsewhere and are worth
+stating rather than glossing over:
+
+- **File permissions.** The history file is written with mode `0600`. POSIX honours that. Windows
+  ignores POSIX modes, so the file inherits the ACL of your profile directory instead — on a real
+  Windows install this was observed to include `CodexSandboxUsers:(RX)`, i.e. readable by more
+  than just you. **Treat `0600` as a POSIX-only guarantee.** If the contents matter, use
+  `--no-record`, or `--forget` once a parcel arrives.
+- **Where it lives.** `~/.cache/parcel-kau-a/` follows the XDG convention. On Windows that resolves
+  to `C:\Users\<you>\.cache\parcel-kau-a\`, which works but is not the platform's own
+  convention (`%LOCALAPPDATA%`). Set `PARCEL_KAU_A_HOME` to put it wherever you prefer.
+- **Invoking it.** Use `python` on Windows, not `python3` — the latter is a Microsoft Store alias
+  that exits 9009 with "Python was not found".
+- **Installing it.** `requirements.txt` is deliberately ASCII-only: pip reads it with the system
+  locale encoding, and non-ASCII comments break installation on a Traditional Chinese Windows
+  (cp950).
+
+CI runs the suite on Linux across Python 3.10–3.13 and on Windows across 3.10 and 3.13.
+
 ## Develop
 
 ```bash
@@ -246,7 +267,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.2.1 ([CHANGELOG](./CHANGELOG.md)) — 129 offline unit tests. Verification status differs per
+v0.2.2 ([CHANGELOG](./CHANGELOG.md)) — 132 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

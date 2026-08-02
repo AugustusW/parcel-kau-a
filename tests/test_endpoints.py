@@ -105,3 +105,15 @@ def test_non_string_override_value_warns_instead_of_vanishing(tmp_path, monkeypa
         json.dumps({"tcat": {"trace": 12345}}), encoding="utf-8")
     assert endpoints.get("tcat")["trace"] == endpoints.DEFAULTS["tcat"]["trace"]
     assert "tcat" in capsys.readouterr().err
+
+
+def test_requirements_file_is_ascii_only():
+    """pip 以系統 locale 編碼讀 requirements.txt：非 ASCII 註解會讓繁中 Windows
+    （cp950）安裝直接 UnicodeDecodeError。用測試守住，別靠人眼看（我自己就漏了一行）。
+    """
+    raw = (Path(__file__).resolve().parent.parent / "requirements.txt").read_bytes()
+    try:
+        raw.decode("ascii")
+    except UnicodeDecodeError as e:
+        bad = raw[e.start:e.end].decode("utf-8", "replace")
+        raise AssertionError(f"requirements.txt 含非 ASCII 字元 {bad!r}（offset {e.start}）")

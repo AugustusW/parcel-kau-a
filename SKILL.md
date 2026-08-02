@@ -9,6 +9,9 @@ description: Track Taiwan parcel deliveries by tracking number. Use when the use
 
 ## 用法
 
+macOS / Linux 用 `python3`；**Windows 要用 `python`**（`python3` 在 Windows 是
+Microsoft Store 的捷徑，直接執行會回 9009「Python was not found」）。
+
 ```bash
 python3 scripts/track.py <單號>                      # 自動判別貨運公司
 python3 scripts/track.py <單號> --carrier tcat       # 指定（建議：省下無謂請求）
@@ -16,6 +19,13 @@ python3 scripts/track.py <單號> --json               # 機器可讀輸出
 python3 scripts/track.py --history                   # 列出查詢紀錄
 python3 scripts/track.py --forget <單號>             # 刪除某筆紀錄
 python3 scripts/track.py --endpoints                 # 列出目前生效的查詢網址
+```
+
+Windows（PowerShell）：
+
+```powershell
+python scripts\track.py <單號> --carrier tcat
+python scripts\track.py --history
 ```
 
 `--carrier` 可用值：`tcat`（黑貓）、`kerrytj`（嘉里大榮）、`ecan`（宅配通）、`pchome`（網家速配）、`fusheng`（富昇/momo）、`spx`（蝦皮店到店）。
@@ -71,6 +81,7 @@ pip install playwright && playwright install chromium
 
 **直連**查到結果時會記下「單號→哪家貨運」到 `~/.cache/parcel-kau-a/history.json`（權限 600）。走 `--via-17track` 不記錄（記成 17track 會讓下次自動判別去打付費 API）。
 **目的是隱私**：下次查同一單號直接送那一家，不必對五家逐一嘗試。查無資料不記錄。
+（`0600` 僅 POSIX 落實；Windows 上該檔繼承使用者目錄 ACL，實測可能被其他群組讀取。）
 
 - 輸出出現 `（依查詢紀錄：…只查這一家）` = 這次只送了一家
 - 輸出出現 `（這筆看起來已完成，可用 --forget xxx 刪除紀錄）` → **主動問使用者要不要清掉**，

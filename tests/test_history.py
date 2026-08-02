@@ -44,10 +44,19 @@ def test_lookup_misses_are_silent(home):
     assert history.lookup("000000000000") is None
 
 
-def test_record_file_is_owner_only(home):
+@pytest.mark.skipif(os.name == "nt",
+                    reason="Windows 沒有 POSIX 權限位元；存取控制走 ACL，見 README 平台差異段")
+def test_record_file_is_owner_only_on_posix(home):
     history.record(_found())
     mode = stat.S_IMODE(os.stat(history.path()).st_mode)
     assert mode == 0o600, f"單號屬個資鄰接，不可讓同機他人讀取（實際 {oct(mode)}）"
+
+
+def test_record_file_is_created_on_every_platform(home):
+    """權限保證因平台而異，但「檔案有被建立且讀得回來」是各平台共通的最低要求。"""
+    history.record(_found())
+    assert history.path().exists()
+    assert history.lookup("135079340105") == "tcat"
 
 
 def test_record_stores_only_expected_fields(home):
@@ -125,6 +134,7 @@ def test_completion_keywords_reject_forward_looking_phrases(home):
         assert history.lookup_entry("135079340105")["looks_complete"] is False, status
 
 
+@pytest.mark.skipif(os.name == "nt", reason="同上：POSIX 權限位元在 Windows 無意義")
 def test_temp_file_is_owner_only_before_content_is_written(home, monkeypatch):
     """權限要在寫入內容前就設好，否則有一段時間單號是他人可讀的（architect MEDIUM）。"""
     seen: list[int] = []

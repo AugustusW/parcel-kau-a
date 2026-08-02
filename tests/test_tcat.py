@@ -95,3 +95,17 @@ def test_http_error_is_raised_not_parsed(monkeypatch):
     monkeypatch.setattr(mod.requests, "Session", lambda: _Session())
     with pytest.raises(requests.HTTPError):
         mod.TcatAdapter().track("903123456789")
+
+
+def test_wellformed_but_unknown_number_is_not_found_not_parse_error():
+    """黑貓對「格式正確但查不到」回的是獨立頁（#ContentPlaceHolder1_tblNotFound），
+    既無 .orderlist-box 也無 txtQuery1——原本的改版判準會誤判成站方改版。
+
+    與 tcat_invalid.html 不同：那是「格式就錯」（checksum 失敗、回 alert），
+    這是「格式對但無資料」，兩條路徑不同頁，所以舊測試抓不到。
+    （2026-08-02 使用者於 Windows 實測回報）
+    """
+    html = (FIXTURES / "tcat_notfound_valid_format.html").read_text()
+    result = parse_summary_page(html, number="900000000009")
+    assert result.found is False
+    assert result.events == []

@@ -1,7 +1,11 @@
-# parcel-kau-a — 執行依賴
-# Python >= 3.10（playwright 1.62 的 requires_python 下限；本專案語法亦用到 3.10+ union type）
+# parcel-kau-a runtime dependencies.
+# Kept ASCII-only on purpose: pip reads this file with the system locale encoding,
+# and non-ASCII comments make installation fail on a Traditional Chinese Windows
+# (cp950) with UnicodeDecodeError. Reported from a real Windows install, 2026-08-02.
+#
+# Python >= 3.10 (playwright 1.62 requires it; this project also uses 3.10+ syntax).
 requests>=2.34.2
 beautifulsoup4>=4.15.0
 
-# 選配：蝦皮店到店（SPX）需要 headless 瀏覽器，未安裝時其餘 3 家照常運作
-#   pip install playwright>=1.62.0 && playwright install chromium
+# Optional, for Shopee SPX only -- the other five couriers work without it:
+#   pip install "playwright>=1.62.0" && playwright install chromium
