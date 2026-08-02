@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.1.1] - 2026-08-02
+
+Privacy disclosure fix — the README contradicted what auto-detection actually does.
+
+### Fixed
+- **Privacy section was wrong about auto-detection.** It claimed tracking numbers "go to the
+  courier that owns them," but T-cat, Kerry TJ, e-can, PChome Express, and Fusheng all issue
+  12-digit numeric numbers — so a bare number with no `--carrier` is tried against them in turn,
+  and up to five companies see a number belonging to one of them. Both READMEs now state this
+  plainly and point at `--carrier` as the one-company path.
+
+### Added
+- **Codex install path documented.** The skill has no Claude-specific dependencies — a `SKILL.md`
+  plus a Python CLI — so the same folder drops into `~/.codex/skills/` and works as-is. Verified
+  by running the installed copy under both homes.
+- The CLI now says so **before it sends anything**: when no `--carrier` is given and the number
+  matches more than one courier's format, it names every courier that will be queried and shows
+  the `--carrier` values that would narrow it to one — printed ahead of the first request, so the
+  choice is still yours to make. Suppressed under `--json` so machine-readable output stays
+  parseable.
+
 ## [0.1.0] - 2026-08-02
 
 First release. Six Taiwanese couriers with no API key, plus an opt-in 17TRACK bridge.
@@ -24,7 +45,7 @@ First release. Six Taiwanese couriers with no API key, plus an opt-in 17TRACK br
   aggregator's `detect()` always returns `False` so auto-detection can never spend the user's
   quota — only an explicit `--via-17track` reaches it. Key comes from
   `PARCEL_KAU_A_17TRACK_KEY`; unset means only this path is unavailable
-- 57 offline unit tests pinned to captured fixtures; each fixture ships with a `*_notes.md`
+- 60 offline unit tests pinned to captured fixtures; each fixture ships with a `*_notes.md`
   recording how it was captured
 
 ### Notes

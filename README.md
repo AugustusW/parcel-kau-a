@@ -8,10 +8,12 @@ English | [繁體中文](./README.zh-TW.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#prerequisites)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-orange.svg)](https://claude.com/claude-code)
+[![Codex](https://img.shields.io/badge/Codex-compatible-black.svg)](https://developers.openai.com/codex/skills)
 
-An agent skill — open [SKILL.md standard](https://developers.openai.com/codex/skills) — that reads
-the **public tracking pages** of six Taiwanese couriers and returns a normalized delivery
-timeline. The name is Taiwanese Hokkien: *kàu--ah*（到啊）— "it's here."
+An agent skill — open [SKILL.md standard](https://developers.openai.com/codex/skills), works in
+[Claude Code](https://claude.com/claude-code) **and** [Codex](https://developers.openai.com/codex/skills) —
+that reads the **public tracking pages** of six Taiwanese couriers and returns a normalized
+delivery timeline. The name is Taiwanese Hokkien: *kàu--ah*（到啊）— "it's here."
 
 ## Why?
 
@@ -49,9 +51,15 @@ repeat per parcel                     --json to pipe onward
 cp -r parcel-kau-a ~/.claude/skills/parcel-kau-a
 pip install -r ~/.claude/skills/parcel-kau-a/requirements.txt
 
+# Codex — same folder, different home (open SKILL.md standard, no changes needed)
+cp -r parcel-kau-a ~/.codex/skills/parcel-kau-a
+
 # optional — only needed for 蝦皮店到店 (SPX)
 pip install playwright && playwright install chromium
 ```
+
+Nothing in the skill is Claude-specific: it is a `SKILL.md` plus a Python CLI, so the same folder
+works in either host.
 
 ## Prerequisites
 
@@ -159,9 +167,14 @@ shape. The couriers are not similar under the hood:
 
 - **No storage.** No cache, no history, no logs, no telemetry. Each query is a live request and
   the result is printed, not saved.
-- **Tracking numbers go to the courier that owns them** — the same request your browser would
-  make on their public page — and, in Claude Code, the returned timeline enters your own Claude
-  session like any other command output.
+- **Auto-detection sends the number to couriers that don't own it.** T-cat, Kerry TJ, e-can,
+  PChome Express, and Fusheng all issue 12-digit numeric tracking numbers, so a bare number with
+  no `--carrier` is tried against them in turn until one reports a hit — up to five companies
+  see a number that belongs to one of them. Each request is the same one your browser would make
+  on their public form, and none of them learns who you are, but the number itself is disclosed
+  more widely than you might assume. **Passing `--carrier` sends it to exactly one company.** The CLI names the couriers it is about to query before the first request goes out, so this is visible at the point of use, not just here.
+- In Claude Code, the returned timeline enters your own Claude session like any other command
+  output.
 - **A tracking number is not anonymous.** On most of these sites it identifies a parcel, and
   the timeline can include a store or depot name. Treat it as you would a receipt.
 
@@ -192,7 +205,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.1.0 ([CHANGELOG](./CHANGELOG.md)) — 57 offline unit tests. Verification status differs per
+v0.1.1 ([CHANGELOG](./CHANGELOG.md)) — 60 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

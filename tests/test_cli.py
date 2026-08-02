@@ -149,3 +149,55 @@ def test_unknown_number_without_17track_hints_at_it(monkeypatch, capsys):
     code = track.run(["83546610320956"])
     assert code == 2
     assert "17track" in capsys.readouterr().out
+
+
+def test_auto_mode_announces_candidates_before_querying(monkeypatch, capsys):
+    """揭露要在查詢**之前**：先講會送給哪幾家，讓使用者有機會改用 --carrier。"""
+    order = []
+
+    class _Tracking(FakeAdapter):
+        def track(self, number, carrier_code=None):
+            order.append(("query", self.code))
+            return super().track(number)
+
+    a, b = _Tracking("tcat", found=False), _Tracking("ecan", found=True)
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": a, "ecan": b})
+
+    import builtins
+    printed: list[str] = []
+    real_print = builtins.print
+
+    def spy(*args, **kw):
+        text = " ".join(str(x) for x in args)
+        printed.append(text)
+        order.append(("print", text))
+        real_print(*args, **kw)
+
+    monkeypatch.setattr(builtins, "print", spy)
+    track.run(["123456789012"])
+
+    disclosure = next((i for i, (kind, v) in enumerate(order)
+                       if kind == "print" and "--carrier" in v), None)
+    first_query = next((i for i, (kind, _) in enumerate(order)
+                        if kind == "query"), None)
+    assert disclosure is not None, "自動模式必須揭露"
+    assert first_query is not None
+    assert disclosure < first_query, "揭露必須早於第一次網路請求"
+    # 明示是哪幾家，不能只說「多家」
+    assert "假tcat" in printed[0] and "假ecan" in printed[0]
+
+
+def test_explicit_carrier_has_no_disclosure_noise(monkeypatch, capsys):
+    """指定了 carrier 就只送一家，不需要這段提示。"""
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": FakeAdapter("tcat", found=True)})
+    track.run(["123456789012", "--carrier", "tcat"])
+    assert "--carrier" not in capsys.readouterr().out
+
+
+def test_json_mode_stays_machine_readable(monkeypatch, capsys):
+    """--json 的 stdout 必須可直接 json.loads，提示不能污染它。"""
+    a = FakeAdapter("tcat", found=False)
+    b = FakeAdapter("ecan", found=True)
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": a, "ecan": b})
+    track.run(["123456789012", "--json"])
+    json.loads(capsys.readouterr().out)

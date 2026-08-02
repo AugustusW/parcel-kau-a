@@ -91,10 +91,20 @@ def run(argv: list[str]) -> int:
               f"若為中華郵政/全家/7-11/新竹，請加 --via-17track（需自備 API key）")
         return 2
 
+    # 揭露在查詢之前：這些單號格式共用，不指定 carrier 時單號會依序送給下列各家
+    # （命中即停，所以實際家數可能較少）。使用者要有機會在請求發出前改用 --carrier。
+    if not args.carrier and not args.as_json and len(codes) > 1:
+        names = "、".join(CARRIERS[c].name for c in codes)
+        print(f"（未指定貨運公司：單號格式符合 {len(codes)} 家，將依序查詢 {names}，"
+              f"命中即停——單號因此可能送到不只一家。\n"
+              f"　指定 --carrier 可只送一家：{'/'.join(codes)}）\n")
+
     last: tuple[TrackResult, str] | None = None
     errors: list[str] = []
+    asked: list[str] = []
     for code in codes:
         adapter = CARRIERS[code]
+        asked.append(adapter.name)
         try:
             result = adapter.track(args.number)
         except CarrierUnavailable as e:

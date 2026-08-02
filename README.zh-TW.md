@@ -8,8 +8,9 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#前置準備)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-orange.svg)](https://claude.com/claude-code)
+[![Codex](https://img.shields.io/badge/Codex-compatible-black.svg)](https://developers.openai.com/codex/skills)
 
-一個 agent skill（採開放的 [SKILL.md 標準](https://developers.openai.com/codex/skills)），讀取六家台灣貨運公司的**公開查詢頁**，回標準化的配送時間軸。名字取自台語 *kàu--ah*（到啊）。
+一個 agent skill（採開放的 [SKILL.md 標準](https://developers.openai.com/codex/skills)，[Claude Code](https://claude.com/claude-code) 與 [Codex](https://developers.openai.com/codex/skills) 都能用），讀取六家台灣貨運公司的**公開查詢頁**，回標準化的配送時間軸。名字取自台語 *kàu--ah*（到啊）。
 
 ## 為什麼？
 
@@ -44,9 +45,14 @@
 cp -r parcel-kau-a ~/.claude/skills/parcel-kau-a
 pip install -r ~/.claude/skills/parcel-kau-a/requirements.txt
 
+# Codex——同一份資料夾，換個位置放（開放 SKILL.md 標準，不需修改）
+cp -r parcel-kau-a ~/.codex/skills/parcel-kau-a
+
 # 選配——只有蝦皮店到店需要
 pip install playwright && playwright install chromium
 ```
+
+這個 skill 沒有任何 Claude 專屬相依：它就是一份 `SKILL.md` 加一支 Python CLI，同一份資料夾兩邊都能跑。
 
 ## 前置準備
 
@@ -128,7 +134,8 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 ## 隱私
 
 - **什麼都不存**：無快取、無歷史、無 log、無遙測。每次查詢都是即時請求，結果印出來而不落地。
-- **單號會送到擁有它的貨運公司**——與你在該站公開頁面手動查詢時的請求相同；在 Claude Code 中，回傳的時間軸會進入你自己的 Claude session，如同任何指令輸出。
+- **自動判別會把單號送給不是它主人的貨運公司**：黑貓、嘉里大榮、宅配通、網家速配、富昇的單號都是 12 碼純數字，所以不加 `--carrier` 時會依序送去查、直到某一家回報查得到——最多有五家看到這組只屬於其中一家的單號。每個請求都與你在該站公開表單手動查詢時相同，各站也不會知道你是誰，但單號本身的揭露範圍比直覺想像的廣。**加上 `--carrier` 就只會送給一家。** CLI 會在送出第一個請求之前先列出即將查詢的貨運公司，所以這件事在使用當下就看得到，不是只寫在這裡。
+- 在 Claude Code 中，回傳的時間軸會進入你自己的 Claude session，如同任何指令輸出。
 - **單號不是匿名資料**：在多數站台上它可辨識一件包裹，時間軸還可能含門市或營業所名稱。請比照收據對待。
 
 ## 已知限制
@@ -150,7 +157,7 @@ Parser 對照 `tests/fixtures/` 內擷取下來的回應測試，每份都附 `*
 
 ## 狀態
 
-v0.1.0（[CHANGELOG](./CHANGELOG.md)）——57 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
+v0.1.1（[CHANGELOG](./CHANGELOG.md)）——60 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
 
 | 貨運 | 查無資料路徑 | 有資料路徑 |
 |---|---|---|
