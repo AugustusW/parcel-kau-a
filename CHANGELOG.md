@@ -28,10 +28,14 @@ First release. Six Taiwanese couriers with no API key, plus an opt-in 17TRACK br
   recording how it was captured
 
 ### Notes
-- Found-path parsing is verified against a real parcel for T-cat only. Kerry TJ, e-can, and PChome Express use
-  synthetic found fixtures built from real field names; SPX selectors come from a live page
-  snapshot but have not been run against a real parcel. Those paths carry `UNVERIFIED` comments
-  and will be re-calibrated as real tracking numbers become available.
-- 中華郵政, 全家店到店, 7-ELEVEN 交貨便, and 新竹物流 are not supported: all four gate their
-  tracking form behind a CAPTCHA (新竹物流 also blocks non-browser requests). No CAPTCHA solving
-  is attempted.
+- Found-path parsing is verified against real parcels for **T-cat** (including a 3-event history)
+  and **Fusheng** (4-event history). Kerry TJ, e-can, and PChome Express use synthetic found
+  fixtures built from real field names; SPX selectors come from a live page snapshot but have not
+  been run against a real parcel. Those paths carry `UNVERIFIED` comments and will be
+  re-calibrated as real tracking numbers become available.
+- 中華郵政, 全家店到店, 7-ELEVEN 交貨便, and 新竹物流 cannot be read directly: all four gate their
+  tracking form behind a CAPTCHA. No CAPTCHA solving is attempted — use the 17TRACK bridge above
+  if you need them.
+- 17TRACK quota, for what it's worth: only `register` deducts (1 per number); `gettrackinfo` and
+  webhook pushes are free, so re-checking a number costs nothing. The adapter deliberately avoids
+  `getRealTimeTrackInfo`, whose `Instant` cache level costs 10 per call.
