@@ -154,3 +154,17 @@ def test_single_malformed_entry_does_not_crash_callers(home):
     assert history.lookup("123456789012") is None
     history.record(_found(number="123456789012"))          # 不可 raise
     assert history.lookup("123456789012") == "tcat"
+
+
+@pytest.mark.parametrize("status,expected", [
+    ("投遞中", False),      # 含「投遞」但還在路上——原本會被標成可刪
+    ("投遞失敗", False),
+    ("配送異常", False),
+    ("退回中", False),
+    ("順利投遞", True),
+    ("投遞完成", True),
+    ("已投遞", True),
+])
+def test_completion_rejects_in_progress_and_failed_states(home, status, expected):
+    """「投遞」是短詞，投遞中／投遞失敗都含它（外部 review v0.2.0）。"""
+    assert history.looks_complete(status) is expected

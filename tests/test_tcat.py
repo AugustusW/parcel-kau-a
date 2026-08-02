@@ -5,6 +5,8 @@ fixtures 取自 2026-08-02 真實查詢（單號已代換為 900000000001）。
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from carriers.tcat import (TcatAdapter, parse_detail_page,  # noqa: E402
@@ -68,3 +70,28 @@ def test_multi_event_detail_page_parses_chronological_history():
     assert result.latest.time == "2026/06/29 14:37"
     assert result.latest.location == "甲營業所"
     assert {e.status for e in result.events} == {"順利送達", "配送中", "已集貨"}
+
+
+def test_http_error_is_raised_not_parsed(monkeypatch):
+    """站方回 404 時要走網路錯誤分類，不可讓 parser 誤判成「頁面結構已變」。"""
+    import requests
+    from carriers import tcat as mod
+
+    class _Resp:
+        status_code, text, content = 404, "<html>Not Found</html>", b"x"
+
+        def raise_for_status(self):
+            raise requests.HTTPError("404", response=self)
+
+    class _Session:
+        headers: dict = {}
+
+        def get(self, *a, **kw):
+            return _Resp()
+
+        def post(self, *a, **kw):
+            return _Resp()
+
+    monkeypatch.setattr(mod.requests, "Session", lambda: _Session())
+    with pytest.raises(requests.HTTPError):
+        mod.TcatAdapter().track("903123456789")

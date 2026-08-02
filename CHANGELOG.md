@@ -3,6 +3,47 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.2.1] - 2026-08-02
+
+External review of v0.2.0. Every finding checked against the code before acting; all five were real.
+
+### Fixed
+- **A failed history write threw away a successful lookup.** `record()` ran before the result was
+  printed, so an unwritable cache dir, a full disk, or a locked file lost the delivery status the
+  user actually asked for. History is auxiliary — the write now fails to stderr and the result is
+  printed regardless. (`history.py` promised "never blocks the main function"; that promise had
+  only been kept for *reading* corrupt data.)
+- **T-cat and e-can never checked HTTP status.** Every other adapter calls `raise_for_status()`,
+  so a 404 from those two fell through to the parser and surfaced as "頁面結構已變" instead of the
+  v0.2.0 error classification that points at the endpoint config.
+- **Completion detection matched `投遞` on its own**, so `投遞中` and `投遞失敗` were both flagged
+  as deletable. Replaced with complete phrases (`順利投遞`, `投遞完成`, `已投遞`, `投遞成功`) and
+  added 失敗/退回/異常/中 to the negative list.
+- **Events were sorted by their raw date string**, which only matches chronological order when
+  every carrier formats dates identically — they don't. e-can renders `2026/8/2` unpadded, so
+  `'8' > '1'` put August after December; mixing `/` and `-` separators reordered adjacent days.
+  Nothing errored: the wrong event was simply reported as the latest status, and only across a
+  month boundary. Times are now parsed (padded or not, `/` or `-`, with or without seconds, ISO
+  with an offset, and e-can's 上午/下午 marker) and compared as datetimes; unparseable values fall
+  back to string comparison rather than failing. Display still shows each site's original string.
+- **`USER_AGENT` still said 0.1.0** after two releases. It now derives from a single `VERSION`
+  constant so it cannot drift again.
+
+### Added
+- **CI matrix across Python 3.10–3.13**, running `compileall` as well as the tests. The 3.10/3.11
+  import failure fixed in v0.2.0 was invisible to a green suite on 3.12; this is what would have
+  caught it.
+
+### Changed
+- **Docs stop over-promising.** "Change the config instead of the code" only covers a URL moving —
+  a rebuilt page, changed API shape, or renamed form fields still needs a parser change, and the
+  README now says so. History is described as recording *direct* lookups only: `--via-17track`
+  results are deliberately not recorded, because storing `17track` as the carrier would point
+  every later auto-detected lookup at a paid API.
+
+### Notes
+- 129 offline unit tests.
+
 ## [0.2.0] - 2026-08-02
 
 Remembers which courier a number belongs to — so the second lookup asks one company, not five.

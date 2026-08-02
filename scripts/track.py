@@ -28,7 +28,8 @@ def _render(result: TrackResult, carrier_name: str) -> str:
     if not result.found:
         return f"{head}\n查無資料（單號未登錄、輸入錯誤，或已超過該站保留期限）"
     lines = [head, ""]
-    for e in sorted(result.events, key=lambda x: x.time, reverse=True):
+    # 與 TrackResult.latest 用同一把排序鑰匙，否則「最新」與列表首行可能不一致
+    for e in sorted(result.events, key=lambda x: x.sort_key, reverse=True):
         where = f"　{e.location}" if e.location else ""
         lines.append(f"{e.time}　{e.status}{where}")
     lines += ["", f"來源：{result.source_url}"]
@@ -60,12 +61,18 @@ def describe_network_error(e: Exception) -> str:
 
 def _finish(result: TrackResult, carrier_name: str, args) -> None:
     """輸出結果，並依 spec 處理查詢紀錄的寫入與「可刪」標記。"""
+    recorded = False
     if not args.no_record:
-        history.record(result)
+        try:
+            recorded = history.record(result)
+        except OSError as e:
+            # 紀錄是輔助功能：寫不進去（目錄唯讀／磁碟滿／檔案被佔用）也必須先把
+            # 查到的貨態交給使用者。走 stderr 才不會污染 --json 的 stdout。
+            print(f"（查詢紀錄寫入失敗，本次結果未記住：{e}）", file=sys.stderr)
     _emit(result, carrier_name, args.as_json)
     # 需求 3：CLI 不做互動提示（非互動硬規則 + agent 環境會卡死），
     # 只標記並給指令；真正詢問使用者的是 agent。
-    if (not args.as_json and not args.no_record and result.found
+    if (not args.as_json and recorded
             and history.looks_complete(result.latest.status if result.latest else "")):
         print(f"\n（這筆看起來已完成，可用 --forget {result.number} 刪除紀錄）")
 

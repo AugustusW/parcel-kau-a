@@ -115,17 +115,19 @@ class TcatAdapter:
         for i in range(2, 11):
             data[f"ctl00$ContentPlaceHolder1$txtQuery{i}"] = ""
         data["ctl00$ContentPlaceHolder1$btnSend"] = "確認送出"
-        summary = parse_summary_page(
-            s.post(_url("trace"), data=data, timeout=REQUEST_TIMEOUT,
-                   headers={"Referer": _url("trace")}).text, number)
+        post_resp = s.post(_url("trace"), data=data, timeout=REQUEST_TIMEOUT,
+                           headers={"Referer": _url("trace")})
+        post_resp.raise_for_status()
+        summary = parse_summary_page(post_resp.text, number)
         if not summary.found:
             return summary
 
         # 摘要只有最新一筆；詳細頁才有完整歷程，取得失敗時退回摘要
         try:
-            detail = parse_detail_page(
-                s.get(_url("detail").format(number=number),
-                      timeout=REQUEST_TIMEOUT).text, number)
+            detail_resp = s.get(_url("detail").format(number=number),
+                                timeout=REQUEST_TIMEOUT)
+            detail_resp.raise_for_status()
+            detail = parse_detail_page(detail_resp.text, number)
         except requests.RequestException:
             return summary
         return detail if detail.found else summary

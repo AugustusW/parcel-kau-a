@@ -69,5 +69,6 @@ class EcanAdapter:
         resp = requests.post(
             _url("post"), data=data, timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": USER_AGENT, "Referer": _url("source")})
-        resp.encoding = "big5"  # 站方不送 charset，requests 會猜錯
+        resp.raise_for_status()  # 404 屬設定/改版問題，該走錯誤分類而非 parser
+        resp.encoding = "big5"   # 站方不送 charset，requests 會猜錯
         return parse_result_page(resp.text, number)

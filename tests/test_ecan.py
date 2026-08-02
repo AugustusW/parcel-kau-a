@@ -44,3 +44,20 @@ def test_unrecognized_page_raises_parse_error():
     with pytest.raises(ParseError):
         parse_result_page("<html><body>宅配通 網站維護中</body></html>",
                           number="900000000001")
+
+
+def test_http_error_is_raised_not_parsed(monkeypatch):
+    """同 tcat：404 該走錯誤分類，不是被 parser 當成改版。"""
+    import pytest
+    import requests
+    from carriers import ecan as mod
+
+    class _Resp:
+        status_code, text, content, encoding = 404, "<html>404</html>", b"x", "big5"
+
+        def raise_for_status(self):
+            raise requests.HTTPError("404", response=self)
+
+    monkeypatch.setattr(mod.requests, "post", lambda *a, **kw: _Resp())
+    with pytest.raises(requests.HTTPError):
+        mod.EcanAdapter().track("123456789012")

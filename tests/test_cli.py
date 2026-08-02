@@ -327,3 +327,30 @@ def test_unavailable_carrier_is_fatal_when_explicitly_requested(monkeypatch, cap
     monkeypatch.setattr(track, "CARRIERS", {"spx": dead})
     assert track.run(["TW254414081298F", "--carrier", "spx"]) == 3
     assert "Playwright" in capsys.readouterr().out
+
+
+def test_history_write_failure_does_not_swallow_the_result(monkeypatch, capsys):
+    """紀錄是輔助功能：寫不進去也必須先把查到的貨態給使用者。
+
+    history.py 自述「絕不讓它擋住主功能」，但那只兌現了讀取毀損；寫入失敗
+    （目錄唯讀／磁碟滿／檔案被佔用）原本會在輸出前就 raise（外部 review v0.2.0）。
+    """
+    import history
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": FakeAdapter("tcat", found=True)})
+
+    def boom(_result):
+        raise OSError("Read-only file system")
+
+    monkeypatch.setattr(history, "record", boom)
+    assert track.run(["123456789012", "--carrier", "tcat"]) == 0
+    out, err = capsys.readouterr()
+    assert "假tcat" in out, "查詢結果必須照樣輸出"
+    assert "Read-only" in err, "寫入失敗要講，但走 stderr 不干擾 stdout"
+
+
+def test_history_write_failure_keeps_json_output_parseable(monkeypatch, capsys):
+    import history
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": FakeAdapter("tcat", found=True)})
+    monkeypatch.setattr(history, "record", lambda _r: (_ for _ in ()).throw(OSError("disk full")))
+    track.run(["123456789012", "--carrier", "tcat", "--json"])
+    json.loads(capsys.readouterr().out)

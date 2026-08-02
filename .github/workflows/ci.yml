@@ -1,0 +1,27 @@
+name: tests
+
+# v0.2.0 出貨後才發現 3.10/3.11 連 import 都失敗（巢狀引號 f-string 需要 PEP 701），
+# 而本機只跑 3.12 所以全綠。這個 matrix 的存在就是為了讓那類錯誤不再靠人工發現。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: install
+        run: pip install -r requirements.txt pytest
+      - name: import check (catches syntax not covered by tests)
+        run: python -m compileall -q scripts
+      - name: pytest
+        run: python -m pytest tests -q

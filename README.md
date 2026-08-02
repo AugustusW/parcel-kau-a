@@ -225,6 +225,11 @@ into `~/.cache/parcel-kau-a/endpoints.json`:
 `--endpoints` prints what is currently in effect, along with the override file's path. A broken
 override file falls back to the defaults with a warning rather than taking the tool down.
 
+**This covers a URL moving, not a site being rebuilt.** If a courier changes its HTML structure,
+its API's response shape, its form fields, or its CSS classes, the parser has to change with it —
+configuration can't express that. What you get instead is an honest failure: the adapter raises
+"頁面結構已變，請回報 issue" rather than returning an empty result that looks like "not found".
+
 Error messages distinguish the cases so you know where to look: a `404` says the URL is likely
 stale and points at the config, a `5xx` says the courier's server is having trouble, and timeouts
 read differently from refused connections.
@@ -241,7 +246,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.2.0 ([CHANGELOG](./CHANGELOG.md)) — 109 offline unit tests. Verification status differs per
+v0.2.1 ([CHANGELOG](./CHANGELOG.md)) — 129 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

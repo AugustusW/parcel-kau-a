@@ -69,7 +69,7 @@ pip install playwright && playwright install chromium
 
 ## 查詢紀錄（v0.2.0 起）
 
-查到結果時會記下「單號→哪家貨運」到 `~/.cache/parcel-kau-a/history.json`（權限 600）。
+**直連**查到結果時會記下「單號→哪家貨運」到 `~/.cache/parcel-kau-a/history.json`（權限 600）。走 `--via-17track` 不記錄（記成 17track 會讓下次自動判別去打付費 API）。
 **目的是隱私**：下次查同一單號直接送那一家，不必對五家逐一嘗試。查無資料不記錄。
 
 - 輸出出現 `（依查詢紀錄：…只查這一家）` = 這次只送了一家
