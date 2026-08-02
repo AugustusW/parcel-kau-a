@@ -1,0 +1,37 @@
+# Changelog
+
+All notable changes to this project are documented here. Every release adds an entry below and
+is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
+
+## [0.1.0] - 2026-08-02
+
+First release. Six Taiwanese couriers with no API key, plus an opt-in 17TRACK bridge.
+
+### Added
+- **Carrier adapters**: 黑貓宅急便 (T-cat), 嘉里大榮 (Kerry TJ), 台灣宅配通 (e-can),
+  網家速配 (PChome Express), 富昇物流/momo (Fusheng), 蝦皮店到店 (Shopee SPX) — each implementing `detect()` / `track()` against a shared
+  `TrackResult` shape
+- **T-cat full history**: the summary page carries only the latest scan, so the adapter follows
+  through to `TraceDetail.aspx` for the complete timeline
+- **CLI** (`scripts/track.py`): carrier auto-detection, `--carrier` to target one, `--json` for
+  machine consumption
+- **Playwright as an optional dependency**: SPX degrades with an actionable message when either
+  the package or the chromium binary is missing; the other five couriers are unaffected
+- **Per-carrier degradation**: a timeout, connection failure, or page-structure change at one
+  site is reported and skipped in auto-detect mode instead of aborting the run
+- **17TRACK bridge (opt-in, bring your own key)**: covers 中華郵政, 全家, 7-11 交貨便, and
+  新竹物流, which cannot be read directly because their tracking forms carry a CAPTCHA. The
+  aggregator's `detect()` always returns `False` so auto-detection can never spend the user's
+  quota — only an explicit `--via-17track` reaches it. Key comes from
+  `PARCEL_KAU_A_17TRACK_KEY`; unset means only this path is unavailable
+- 57 offline unit tests pinned to captured fixtures; each fixture ships with a `*_notes.md`
+  recording how it was captured
+
+### Notes
+- Found-path parsing is verified against a real parcel for T-cat only. Kerry TJ, e-can, and PChome Express use
+  synthetic found fixtures built from real field names; SPX selectors come from a live page
+  snapshot but have not been run against a real parcel. Those paths carry `UNVERIFIED` comments
+  and will be re-calibrated as real tracking numbers become available.
+- 中華郵政, 全家店到店, 7-ELEVEN 交貨便, and 新竹物流 are not supported: all four gate their
+  tracking form behind a CAPTCHA (新竹物流 also blocks non-browser requests). No CAPTCHA solving
+  is attempted.

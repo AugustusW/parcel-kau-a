@@ -1,0 +1,70 @@
+"""黑貓 tcat adapter — parser 對真實 fixtures 的離線行為。
+
+fixtures 取自 2026-08-02 真實查詢（單號已代換為 900000000001）。
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+from carriers.tcat import (TcatAdapter, parse_detail_page,  # noqa: E402
+                           parse_summary_page)
+
+FIXTURES = Path(__file__).parent / "fixtures"
+REAL = "900000000001"
+
+
+def test_detect_accepts_12_digit_numbers():
+    a = TcatAdapter()
+    assert a.detect("903123456789")
+    assert not a.detect("TW254414081298F")
+    assert not a.detect("90312345678")  # 11 碼
+
+
+def test_invalid_number_page_parses_as_not_found():
+    """server 回 alert('...非有效單號') → found=False，不 raise。"""
+    html = (FIXTURES / "tcat_invalid.html").read_text()
+    assert parse_summary_page(html, number="903123456789").found is False
+
+
+def test_blank_form_page_parses_as_not_found():
+    html = (FIXTURES / "tcat_form.html").read_text()
+    assert parse_summary_page(html, number="903123456789").found is False
+
+
+def test_real_summary_page_parses_current_status():
+    html = (FIXTURES / "tcat_found_summary.html").read_text()
+    result = parse_summary_page(html, number=REAL)
+    assert result.found is True
+    assert result.latest.status == "超商代收"
+    assert result.latest.time == "2026/08/01 20:42"
+
+
+def test_summary_ignores_builtin_sample_block():
+    """頁面內建隱藏樣板（站方範例號）不可被誤判為查詢結果。"""
+    html = (FIXTURES / "tcat_found_summary.html").read_text()
+    assert parse_summary_page(html, number="111111111111").found is False
+
+
+def test_real_detail_page_parses_full_history():
+    html = (FIXTURES / "tcat_found_detail.html").read_text()
+    result = parse_detail_page(html, number=REAL)
+    assert result.found is True
+    assert len(result.events) >= 2
+    assert all(e.status for e in result.events)
+    assert "示範門市" in {e.location for e in result.events}
+
+
+def test_multi_event_detail_page_parses_chronological_history():
+    """真實多筆歷程（3 筆，2026-08-02 擷取，單號與營業所已匿名化）。
+
+    先前只有單筆 fixture，多筆的列結構（首列多一格 rowspan 單號欄）沒被鎖住。
+    """
+    html = (FIXTURES / "tcat_found_multi.html").read_text()
+    result = parse_detail_page(html, number="900000000003")
+    assert result.found is True
+    assert len(result.events) == 3
+    assert result.latest.status == "順利送達"
+    assert result.latest.time == "2026/06/29 14:37"
+    assert result.latest.location == "甲營業所"
+    assert {e.status for e in result.events} == {"順利送達", "配送中", "已集貨"}
