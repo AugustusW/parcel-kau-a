@@ -1,6 +1,6 @@
 ---
 name: parcel-kau-a
-description: Track Taiwan parcel deliveries by tracking number. Use when the user asks about a package's delivery status, shipping progress, or where a parcel is — including phrases like 查包裹, 包裹進度, 貨態, 到了沒, tracking, or when they paste a Taiwanese courier tracking number. Supports 黑貓宅急便 (T-cat), 嘉里大榮 (Kerry TJ), 台灣宅配通 (e-can), 網家速配 (PChome Express), 富昇物流／momo 自營 (Fusheng), and 蝦皮店到店 (Shopee SPX). 中華郵政, 全家, 7-11 交貨便, and 新竹物流 cannot be read directly (CAPTCHA) but are reachable via 17TRACK if the user supplies their own API key.
+description: Track Taiwan parcel deliveries by tracking number. Use when the user asks about a package's delivery status, shipping progress, or where a parcel is — including phrases like 查包裹, 包裹進度, 貨態, 到了沒, tracking, or when they paste a Taiwanese courier tracking number. Also use when the user asks which of their parcels are still on the way rather than about one specific number — 還有哪些包裹在路上, 哪些包裹還沒到, 未結案包裹, 我的包裹清單 — which is answered from the local query history without contacting any courier. Supports 黑貓宅急便 (T-cat), 嘉里大榮 (Kerry TJ), 台灣宅配通 (e-can), 網家速配 (PChome Express), 富昇物流／momo 自營 (Fusheng), and 蝦皮店到店 (Shopee SPX). 中華郵政, 全家, 7-11 交貨便, and 新竹物流 cannot be read directly (CAPTCHA) but are reachable via 17TRACK if the user supplies their own API key.
 ---
 
 # parcel-kau-a
@@ -16,7 +16,8 @@ Microsoft Store 的捷徑，直接執行會回 9009「Python was not found」）
 python3 scripts/track.py <單號>                      # 自動判別貨運公司
 python3 scripts/track.py <單號> --carrier tcat       # 指定（建議：省下無謂請求）
 python3 scripts/track.py <單號> --json               # 機器可讀輸出
-python3 scripts/track.py --history                   # 列出查詢紀錄
+python3 scripts/track.py --pending                   # 只列尚未結案的包裹（不連線）
+python3 scripts/track.py --history                   # 列出查詢紀錄（含已完成）
 python3 scripts/track.py --forget <單號>             # 刪除某筆紀錄
 python3 scripts/track.py --endpoints                 # 列出目前生效的查詢網址
 ```
@@ -25,7 +26,7 @@ Windows（PowerShell）：
 
 ```powershell
 python scripts\track.py <單號> --carrier tcat
-python scripts\track.py --history
+python scripts\track.py --pending
 ```
 
 `--carrier` 可用值：`tcat`（黑貓）、`kerrytj`（嘉里大榮）、`ecan`（宅配通）、`pchome`（網家速配）、`fusheng`（富昇/momo）、`spx`（蝦皮店到店）。
@@ -87,6 +88,25 @@ pip install playwright && playwright install chromium
 - 輸出出現 `（這筆看起來已完成，可用 --forget xxx 刪除紀錄）` → **主動問使用者要不要清掉**，
   同意才跑 `--forget`。CLI 刻意不做互動提示（非互動硬規則 + agent 環境會卡死）
 - 使用者若表示某次查詢不想留紀錄，加 `--no-record`
+
+## 未結案清單（v0.3.0 起）
+
+使用者問「還有哪些包裹在路上／哪些還沒到」這類**不指名單號**的問題時，跑 `--pending`：
+
+```text
+未結案包裹（2 筆）
+
+135079340105　黑貓宅急便　配送中　2026/08/06 14:20　（1 天沒更新）
+221100334455　台灣宅配通　已到轉運站　2026/7/20 09:05　（18 天沒更新）
+```
+
+- 「未結案」＝ 查詢紀錄裡沒被判定為已完成的（判定同上面的 `looks_complete`）
+- **這是本機紀錄的快照，不是即時貨態**——`--pending` 一個請求都不發。
+  轉述時要講明「這是上次查的狀態」；使用者想知道現在到哪了，就拿該單號另外查一次
+- `（N 天沒更新）` 是最後一筆**事件**距今幾天，不是距上次查詢。時間字串解析不了就不顯示
+- 天數大到超過站方保留期（黑貓 3 個月、宅配通 2 個月）時 → **主動建議 `--forget`**，
+  那種紀錄再查也查不到了，只會一直佔著清單
+- `--history` 維持列出全部（含已完成並標 `✓可刪`），兩者用途不同
 
 ## 查詢網址失效時
 

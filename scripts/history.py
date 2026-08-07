@@ -27,7 +27,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from carriers.base import TrackResult
+from carriers.base import TrackResult, parse_event_time
 
 HOME_ENV = "PARCEL_KAU_A_HOME"
 _DEFAULT_HOME = Path.home() / ".cache" / "parcel-kau-a"
@@ -89,6 +89,44 @@ def looks_complete(status: str) -> bool:
     if any(w in text for w in _NOT_YET):
         return False
     return any(kw in text for kw in COMPLETE_KEYWORDS)
+
+
+def days_since_last_event(entry: dict, *, now: datetime | None = None) -> int | None:
+    """最後一筆事件距今幾天；時間字串解析不了就回 None。
+
+    回 None 而不是回 0 或改用 last_checked 墊檔：那兩者都是「我多久沒查」而非
+    「包裹多久沒動」，拿來當停滯指標會讓使用者誤判。算不出來就不要說。
+
+    比較全程用 naive 本地時間——各站時間都是台灣時間且不帶時區，
+    parse_event_time() 也刻意回 naive，混入 aware 只會 TypeError。
+    """
+    parsed = parse_event_time(entry.get("last_event_time") or "")
+    if parsed is None:
+        return None
+    # 站方時鐘比本機快（或本機時鐘慢）時 delta 會是負的，天數不該出現負值
+    return max(0, ((now or datetime.now()) - parsed).days)
+
+
+def _event_sort_key(entry: dict) -> tuple[int, object]:
+    """比照 TrackEvent.sort_key：可解析的時間優先且互相比較，其餘退到後面按字串排。"""
+    raw = entry.get("last_event_time") or ""
+    parsed = parse_event_time(raw)
+    return (1, parsed) if parsed else (0, raw)
+
+
+def pending(data: dict[str, dict] | None = None) -> list[tuple[str, dict]]:
+    """尚未結案的紀錄，依最後事件時間新→舊；時間解析不了的排最後。
+
+    「未結案」＝ looks_complete 不為真。欄位缺漏（v0.2.0 之前的紀錄、或使用者
+    手動編輯過）時算未結案——多列一行的代價，遠小於把還在路上的包裹藏起來。
+
+    `data` 讓呼叫端傳入已讀好的 entries()：檔案毀損時 entries() 會印警告，
+    同一次操作讀兩次就會印兩次。
+    """
+    items = entries() if data is None else data
+    rows = [(num, e) for num, e in items.items() if not e.get("looks_complete")]
+    rows.sort(key=lambda kv: _event_sort_key(kv[1]), reverse=True)
+    return rows
 
 
 def _write(data: dict[str, dict]) -> None:
