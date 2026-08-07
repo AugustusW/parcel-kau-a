@@ -1,6 +1,7 @@
 """CLI dispatch / 渲染行為（adapter 全替身，不打網路）。"""
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -307,6 +308,106 @@ def test_json_output_unaffected_by_history_notices(monkeypatch, hist_home, capsy
     track.run(["123456789012", "--carrier", "tcat", "--json"])
     json.loads(capsys.readouterr().out)
 
+
+
+# ── 未結案清單（spec 2026-08-07-parcel-pending-list）────────────────────
+
+def _remember(number, status, event_time="2026-08-01 10:00", carrier="tcat"):
+    import history
+    history.record(TrackResult(carrier=carrier, number=number, found=True,
+                               events=[TrackEvent(time=event_time, status=status)]))
+
+
+def test_pending_flag_lists_only_unfinished_parcels(hist_home, capsys):
+    _remember("111111111111", "配送中")
+    _remember("222222222222", "順利送達")
+    assert track.run(["--pending"]) == 0
+    out = capsys.readouterr().out
+    assert "111111111111" in out
+    assert "222222222222" not in out, "已完成的不該出現在未結案清單"
+
+
+def test_pending_flag_sends_no_network_request(monkeypatch, hist_home):
+    """1A 決策：這個清單純讀本機紀錄，一個請求都不發。"""
+    _remember("111111111111", "配送中")
+    a = FakeAdapter("tcat", found=True)
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": a})
+    track.run(["--pending"])
+    assert a.calls == 0
+
+
+def test_pending_flag_distinguishes_empty_history_from_all_complete(hist_home, capsys):
+    """兩種「沒東西」講同一句話會讓使用者以為功能壞了，必須分開。"""
+    assert track.run(["--pending"]) == 0
+    assert "查詢紀錄是空的" in capsys.readouterr().out
+
+    _remember("222222222222", "順利送達")
+    assert track.run(["--pending"]) == 0
+    out = capsys.readouterr().out
+    assert "沒有未結案" in out
+    assert "--forget" in out, "全部完成時要提示怎麼清掉紀錄"
+
+
+def test_pending_flag_shows_days_since_the_last_event(hist_home, capsys):
+    stale = (datetime.now() - timedelta(days=9)).strftime("%Y/%m/%d %H:%M")
+    _remember("111111111111", "配送中", event_time=stale)
+    track.run(["--pending"])
+    assert "9 天沒更新" in capsys.readouterr().out
+
+
+def test_pending_flag_says_today_instead_of_zero_days(hist_home, capsys):
+    today = datetime.now().strftime("%Y/%m/%d %H:%M")
+    _remember("111111111111", "配送中", event_time=today)
+    track.run(["--pending"])
+    out = capsys.readouterr().out
+    assert "0 天" not in out and "今天" in out
+
+
+def test_pending_flag_omits_the_age_when_time_is_unparseable(hist_home, capsys):
+    _remember("111111111111", "配送中", event_time="時間不詳")
+    assert track.run(["--pending"]) == 0
+    out = capsys.readouterr().out
+    assert "111111111111" in out
+    assert "沒更新" not in out, "算不出天數就不要編一個出來"
+
+
+def test_pending_flag_shows_carrier_name_and_status(hist_home, capsys):
+    _remember("111111111111", "配送中", carrier="ecan")
+    track.run(["--pending"])
+    out = capsys.readouterr().out
+    assert "台灣宅配通" in out and "配送中" in out
+
+
+def test_missing_carrier_shows_a_visible_marker_in_both_listings(hist_home, capsys):
+    """`carrier` 為空字串與整個缺鍵，兩者都顯示「?」。
+
+    原本只有「缺鍵」會走到 "?"；欄位存在但是空字串時 `e.get("carrier", "?")` 回空字串，
+    印出來是一段空白。那是 dict.get 預設值語意的副作用，不是設計決定——空白欄位看起來
+    像對齊沒對好，「?」才講得出「這裡本來該有東西」。兩條路徑統一為後者
+    （fast-code-refiner 2026-08-07 指出行為改變，實測確認後採用新行為並補上本測試）。
+    """
+    import history
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text(
+        '{"111111111111": {"carrier": "", "last_status": "配送中"},'
+        ' "222222222222": {"last_status": "配送中"}}', encoding="utf-8")
+    for flag in ("--pending", "--history"):
+        assert track.run([flag]) == 0
+        out = capsys.readouterr().out
+        for number in ("111111111111", "222222222222"):
+            line = next(ln for ln in out.splitlines() if ln.startswith(number))
+            assert "?" in line, f"{flag} 的 {number} 應顯示 ?：{line!r}"
+
+
+def test_pending_flag_warns_once_about_a_corrupt_file(hist_home, capsys):
+    """紀錄毀損時降級為空，但警告只該出現一次（讀兩次檔就會印兩次）。"""
+    import history
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text("{ not json", encoding="utf-8")
+    assert track.run(["--pending"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err.count("查詢紀錄無法讀取") == 1
+    assert "查詢紀錄是空的" in captured.out
 
 
 def test_unavailable_carrier_does_not_abort_auto_mode(monkeypatch, capsys):

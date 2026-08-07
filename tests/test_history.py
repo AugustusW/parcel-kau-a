@@ -7,6 +7,7 @@ import json
 import os
 import stat
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -178,3 +179,87 @@ def test_single_malformed_entry_does_not_crash_callers(home):
 def test_completion_rejects_in_progress_and_failed_states(home, status, expected):
     """「投遞」是短詞，投遞中／投遞失敗都含它（外部 review v0.2.0）。"""
     assert history.looks_complete(status) is expected
+
+
+# ── 未結案清單（spec 2026-08-07-parcel-pending-list）────────────────────
+
+def test_pending_excludes_completed_parcels(home):
+    history.record(_found(number="111111111111", status="配送中"))
+    history.record(_found(number="222222222222", status="順利送達"))
+    assert [n for n, _ in history.pending()] == ["111111111111"]
+
+
+def test_pending_includes_entries_that_predate_the_flag(home):
+    """舊紀錄或手動編輯過的檔案可能沒有 looks_complete 欄位。
+
+    缺值時寧可列出來（使用者看到後自己判斷）也不要靜靜藏起來——藏起來的包裹
+    使用者永遠不會發現，多列一筆的代價只是多一行。
+    """
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text(
+        '{"111111111111": {"carrier": "tcat", "last_status": "配送中"}}',
+        encoding="utf-8")
+    assert [n for n, _ in history.pending()] == ["111111111111"]
+
+
+def test_pending_sorts_by_event_time_not_string_order(home):
+    """8 月要排在 12 月之前是靠解析，不是字串比大小（v0.2.1 的跨月 bug 同源）。
+
+    2026/8/3 未補零：字串比較會讓 '8' 大於 '1'，把它排到 2026/12/01 前面。
+    """
+    history.record(_found(number="111111111111", status="配送中", time="2026/12/01 09:00"))
+    history.record(_found(number="222222222222", status="配送中", time="2026/8/3 09:00"))
+    history.record(_found(number="333333333333", status="配送中", time="2026/12/20 09:00"))
+    assert [n for n, _ in history.pending()] == \
+        ["333333333333", "111111111111", "222222222222"]
+
+
+def test_pending_puts_unparseable_times_last(home):
+    history.record(_found(number="111111111111", status="配送中", time="時間不詳"))
+    history.record(_found(number="222222222222", status="配送中", time="2026/01/01 09:00"))
+    assert [n for n, _ in history.pending()] == ["222222222222", "111111111111"]
+
+
+def test_pending_accepts_prefetched_entries(home, capsys):
+    """呼叫端已讀過檔案時要能沿用，否則毀損警告會對同一次操作印兩次。"""
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text("{ not json", encoding="utf-8")
+    data = history.entries()
+    capsys.readouterr()
+    assert history.pending(data) == []
+    assert capsys.readouterr().err == "", "沿用已讀資料時不該再讀一次檔案"
+
+
+def test_pending_degrades_to_empty_when_file_is_corrupt(home):
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text("{ not json", encoding="utf-8")
+    assert history.pending() == []
+
+
+@pytest.mark.parametrize("event_time,expected", [
+    ("2026-08-01 10:00", 6),
+    ("2026/08/01 10:00", 6),
+    ("2026/8/1 10:00", 6),          # 各站補零不一致
+    ("2026/08/07 09:00", 0),
+    ("2026/08/07 下午 01:00", 0),    # 宅配通的上午/下午
+    ("2026/07/08", 30),             # 只有日期沒有時間
+])
+def test_days_since_last_event_handles_site_format_variants(event_time, expected):
+    now = datetime(2026, 8, 7, 18, 0)
+    assert history.days_since_last_event({"last_event_time": event_time}, now=now) == expected
+
+
+@pytest.mark.parametrize("entry", [
+    {"last_event_time": "時間不詳"},
+    {"last_event_time": ""},
+    {},
+])
+def test_days_since_last_event_is_none_when_it_cannot_be_known(entry):
+    """算不出來就說算不出來——猜一個天數會讓使用者據以誤判包裹是否卡住。"""
+    assert history.days_since_last_event(entry, now=datetime(2026, 8, 7)) is None
+
+
+def test_days_since_last_event_clamps_future_times_to_zero():
+    """站方時間比本機時鐘快（或使用者時鐘慢）時不該出現負天數。"""
+    assert history.days_since_last_event({"last_event_time": "2026/08/09 10:00"},
+                                         now=datetime(2026, 8, 7)) == 0

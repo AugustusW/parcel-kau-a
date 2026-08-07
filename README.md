@@ -44,6 +44,8 @@ repeat per parcel                     --json to pipe onward
 - ✓ Optional 17TRACK bridge for the four CAPTCHA-blocked couriers — **your** API key, never called unless you ask for it
 - ✓ Remembers which courier a number belongs to, so repeat lookups go to **one** company instead
   of five — a local record you can list and delete (`--history`, `--forget`)
+- ✓ `--pending` answers "which of my parcels are still on the way?" from that local record, with
+  no network request at all — a snapshot of what each parcel last reported, and how long ago
 - ✓ No telemetry, no analytics, nothing leaves your machine except the courier request itself
 
 ## Install
@@ -79,6 +81,7 @@ python3 scripts/track.py 900000000001 --carrier tcat     # go straight to one
 python3 scripts/track.py TW254414081298F --carrier spx   # Shopee SPX
 python3 scripts/track.py 900000000001 --json             # machine-readable
 
+python3 scripts/track.py --pending                       # what is still on the way
 python3 scripts/track.py --history                       # what has been remembered
 python3 scripts/track.py --forget 900000000001           # forget one number
 python3 scripts/track.py --forget-all                    # forget everything
@@ -94,8 +97,22 @@ python3 scripts/track.py --endpoints                     # show the URLs in effe
 來源：https://www.t-cat.com.tw/Inquire/TraceDetail.aspx?BillID=900000000001
 ```
 
-In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"* and the
-skill handles it.
+`--pending` answers a different question — not "where is this one?" but "how many are still
+coming?":
+
+```text
+未結案包裹（2 筆）
+
+900000000001　黑貓宅急便　配送中　2026/08/06 14:20　（1 天沒更新）
+900000000002　台灣宅配通　已到轉運站　2026/7/20 09:05　（18 天沒更新）
+```
+
+That list comes entirely from the local record and **makes no request**, so it shows what each
+parcel reported the last time you looked it up; `（N 天沒更新）` is how long ago that event was.
+To find out where a parcel is right now, look its number up again.
+
+In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"* or
+*"還有哪些包裹在路上"* and the skill handles it.
 
 ## Coverage
 
@@ -179,7 +196,8 @@ shape. The couriers are not similar under the hood:
   `number → courier` (plus its latest status and timestamps) in `~/.cache/parcel-kau-a/history.json`,
   mode `0600`. The point is the next lookup: with a record, the number goes to **one** courier
   instead of being tried against five. Failed lookups are never recorded, `--no-record` skips
-  writing, `--history` lists everything, and `--forget` / `--forget-all` delete it.
+  writing, `--history` lists everything, `--pending` narrows that to the parcels still in transit
+  (read-only, no request), and `--forget` / `--forget-all` delete it.
 - **Where that file lives, precisely.** On macOS, Time Machine excludes `~/Library/Caches` but
   **not** `~/.cache` — so this file is included in backups. If a number shouldn't persist anywhere,
   use `--no-record`, or `--forget` it once the parcel arrives (the CLI points this out for you when
@@ -267,7 +285,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.2.2 ([CHANGELOG](./CHANGELOG.md)) — 133 offline unit tests. Verification status differs per
+v0.3.0 ([CHANGELOG](./CHANGELOG.md)) — 158 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

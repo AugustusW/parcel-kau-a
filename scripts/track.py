@@ -36,6 +36,20 @@ def _render(result: TrackResult, carrier_name: str) -> str:
     return "\n".join(lines)
 
 
+def _carrier_name(entry: dict) -> str:
+    """紀錄裡的 carrier code 翻成中文名；認不得就原樣顯示（手動編輯過的檔案也不該爆）。"""
+    code = entry.get("carrier")
+    return CARRIERS[code].name if code in CARRIERS else (code or "?")
+
+
+def _age_note(entry: dict) -> str:
+    """「多久沒更新」——算不出來就不顯示，不編一個天數出來誤導判斷。"""
+    days = history.days_since_last_event(entry)
+    if days is None:
+        return ""
+    return "　（今天更新）" if days == 0 else f"　（{days} 天沒更新）"
+
+
 def describe_network_error(e: Exception) -> str:
     """把網路層例外翻成使用者能據以行動的訊息。
 
@@ -105,6 +119,8 @@ def run(argv: list[str]) -> int:
                    help="清空所有查詢紀錄")
     p.add_argument("--history", action="store_true", dest="show_history",
                    help="列出查詢紀錄")
+    p.add_argument("--pending", action="store_true", dest="show_pending",
+                   help="只列出尚未結案的包裹（純讀本機紀錄，不發任何查詢請求）")
     p.add_argument("--endpoints", action="store_true", dest="show_endpoints",
                    help="列出目前生效的各家查詢網址（可在設定檔覆寫）")
     args = p.parse_args(argv)
@@ -136,11 +152,25 @@ def run(argv: list[str]) -> int:
         print(f"查詢紀錄（{history.path()}）\n")
         for num, e in sorted(data.items(), key=lambda kv: kv[1].get("last_checked", ""),
                              reverse=True):
-            name = CARRIERS[e["carrier"]].name if e.get("carrier") in CARRIERS \
-                else e.get("carrier", "?")
             mark = "　✓可刪（看似已完成）" if e.get("looks_complete") else ""
-            print(f"{num}　{name}　{e.get('last_status', '')}"
+            print(f"{num}　{_carrier_name(e)}　{e.get('last_status', '')}"
                   f"　{e.get('last_event_time', '')}{mark}")
+        return 0
+    if args.show_pending:
+        # 純讀本機紀錄：一個網路請求都不發。要最新貨態就查單號，這裡是「還有哪些在路上」。
+        data = history.entries()
+        if not data:
+            print("查詢紀錄是空的")
+            return 0
+        rows = history.pending(data)
+        if not rows:
+            # 「沒紀錄」與「全都到了」是兩件事，講同一句話會讓使用者以為功能壞了
+            print(f"沒有未結案的包裹（{len(data)} 筆全部已完成，可用 --forget-all 清掉）")
+            return 0
+        print(f"未結案包裹（{len(rows)} 筆）\n")
+        for num, e in rows:
+            print(f"{num}　{_carrier_name(e)}　{e.get('last_status', '')}"
+                  f"　{e.get('last_event_time', '')}{_age_note(e)}")
         return 0
 
     if not args.number:

@@ -3,6 +3,34 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.3.0] - 2026-08-07
+
+The history file already knew which parcels had arrived. It just had no way to be asked the
+opposite question.
+
+### Added
+- **`--pending` lists the parcels that are still on the way**, newest event first, each with how
+  long it has been since that event (`（18 天沒更新）`). It reads the local history file and makes
+  **no network request** — this is a snapshot of what each parcel last reported, not a live
+  status, and both READMEs say so at the point where the output is shown. "Still on the way"
+  means the existing `looks_complete` flag is not set; entries written before that flag existed,
+  or edited by hand, count as pending rather than being hidden.
+- Empty results distinguish "nothing has ever been looked up" from "everything has arrived", the
+  second of which points at `--forget-all`. One message for both states reads like a broken
+  feature.
+
+### Notes
+- Ordering parses the stored timestamp rather than comparing the raw string, for the same reason
+  event ordering does since v0.2.1: `2026/8/3` is not zero-padded, and `'8' > '1'` puts August
+  ahead of December. A timestamp that cannot be parsed sorts last and shows no age at all — an
+  invented number would be read as evidence that a parcel is stuck.
+- `--history` still lists everything, completed parcels included, with one deliberate change:
+  a record whose `carrier` field is present but empty now prints `?` instead of a blank column,
+  matching what a record with no `carrier` field at all has always printed. The split came from
+  `dict.get(key, default)` returning the empty string rather than the default, which is a
+  language detail and not a decision anyone made.
+- 158 offline unit tests.
+
 ## [0.2.3] - 2026-08-02
 
 The Windows CI added in v0.2.2 failed on its first run. That was the point of adding it.
