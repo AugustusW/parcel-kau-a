@@ -1,6 +1,6 @@
 ---
 name: parcel-kau-a
-description: Track Taiwan parcel deliveries by tracking number. Use when the user asks about a package's delivery status, shipping progress, or where a parcel is — including phrases like 查包裹, 包裹進度, 貨態, 到了沒, tracking, or when they paste a Taiwanese courier tracking number. Also use when the user asks which of their parcels are still on the way rather than about one specific number — 還有哪些包裹在路上, 哪些包裹還沒到, 未結案包裹, 我的包裹清單 — which is answered from the local query history without contacting any courier. Supports 黑貓宅急便 (T-cat), 嘉里大榮 (Kerry TJ), 台灣宅配通 (e-can), 網家速配 (PChome Express), 富昇物流／momo 自營 (Fusheng), and 蝦皮店到店 (Shopee SPX). 中華郵政, 全家, 7-11 交貨便, and 新竹物流 cannot be read directly (CAPTCHA) but are reachable via 17TRACK if the user supplies their own API key.
+description: Track Taiwan parcel deliveries by tracking number. Use when the user asks about a package's delivery status, shipping progress, or where a parcel is — including phrases like 查包裹, 包裹進度, 貨態, 到了沒, tracking, or when they paste a Taiwanese courier tracking number. Also use when the user asks which of their parcels are still on the way rather than about one specific number — 還有哪些包裹在路上, 哪些包裹還沒到, 未結案包裹, 我的包裹清單 — which is answered from the local query history without contacting any courier. When they instead want the live, right-now status of everything still pending — 幫我更新一下未結案包裹, 未結案的都查一下最新進度, 全部包裹現在到哪了 — that live-queries each one instead of reading the snapshot. Supports 黑貓宅急便 (T-cat), 嘉里大榮 (Kerry TJ), 台灣宅配通 (e-can), 網家速配 (PChome Express), 富昇物流／momo 自營 (Fusheng), and 蝦皮店到店 (Shopee SPX). 中華郵政, 全家, 7-11 交貨便, and 新竹物流 cannot be read directly (CAPTCHA) but are reachable via 17TRACK if the user supplies their own API key.
 ---
 
 # parcel-kau-a
@@ -17,6 +17,7 @@ python3 scripts/track.py <單號>                      # 自動判別貨運公�
 python3 scripts/track.py <單號> --carrier tcat       # 指定（建議：省下無謂請求）
 python3 scripts/track.py <單號> --json               # 機器可讀輸出
 python3 scripts/track.py --pending                   # 只列尚未結案的包裹（不連線）
+python3 scripts/track.py --refresh-pending           # 對每筆未結案包裹即時查詢，回報彙整摘要
 python3 scripts/track.py --history                   # 列出查詢紀錄（含已完成）
 python3 scripts/track.py --forget <單號>             # 刪除某筆紀錄
 python3 scripts/track.py --endpoints                 # 列出目前生效的查詢網址
@@ -106,6 +107,41 @@ pip install playwright && playwright install chromium
 - `（N 天沒更新）` 是最後一筆**事件**距今幾天，不是距上次查詢。時間字串解析不了就不顯示
 - 天數大到超過站方保留期（黑貓 3 個月、宅配通 2 個月）時 → **主動建議 `--forget`**，
   那種紀錄再查也查不到了，只會一直佔著清單
+
+## 即時更新未結案包裹（v0.4.0 起）
+
+`--pending` 與 `--refresh-pending` 回答的是不同層次的問題——**先判斷使用者要的是快照還是現況**：
+
+| 使用者問法 | 用哪個 | 為什麼 |
+|---|---|---|
+| 還有哪些包裹在路上／哪些還沒到／未結案包裹／我的包裹清單 | `--pending` | 純讀本機、不發請求，秒回；多數情況這樣就夠 |
+| 幫我更新一下未結案包裹／未結案的都查一下最新進度／全部包裹現在到哪了／有沒有新進度 | `--refresh-pending` | 使用者明確要「現在」的狀態，措辭含「更新／現在／最新」 |
+
+`--refresh-pending` 對查詢紀錄裡**每一筆未結案**的單號逐一即時查詢（沿用單號查詢同一條路徑，
+序列不並行、無重試——跟本工具一貫立場一致，見 README Limitations），查完印出依結果分類的彙整：
+
+```text
+未結案包裹更新（2 筆，依最後事件時間新→舊逐一查詢）
+
+新結案 1　無變化 1
+
+── 新結案（1）──
+135079340105　黑貓宅急便　順利送達　2026/08/08 11:02
+
+── 無變化（1）──
+221100334455　台灣宅配通　已到轉運站　2026/7/20 09:05
+```
+
+- 分類：**新結案**（這次查到已完成）／**有新進度**（最新事件與紀錄快照不同，但還沒完成）／
+  **無變化**／**已略過**（多半是缺 17TRACK API key，見下）／**查詢失敗**（該次請求本身失敗，
+  訊息比照單號查詢的錯誤分類）
+- 查到的結果會**覆寫該筆紀錄快照**（跟一般查詢寫入同一套機制）；`--no-record` 可抑制寫入
+- 某筆查詢失敗**不會**中止整批——換下一筆繼續，失敗原因印在該筆那一行
+- 未結案清單裡若混到需要 17TRACK 才能查的貨運（正常流程不會發生，只會出現在手動編輯過的
+  紀錄檔），且沒設 `PARCEL_KAU_A_17TRACK_KEY` → 該筆列為**已略過**並附設定方式，不算失敗、
+  也不會真的呼叫（額度是使用者的錢）；有設 key 才會真的查
+- 轉述給使用者時明講「這是剛查到的最新狀態」，跟 `--pending` 的「上次查到的快照」區分清楚
+- 包裹數多時就是照樣一筆一筆查，會花比較久——CLI 開查前會先講清楚幾筆
 - `--history` 維持列出全部（含已完成並標 `✓可刪`），兩者用途不同
 
 ## 查詢網址失效時

@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 import requests
 
@@ -20,7 +21,7 @@ import endpoints
 import history
 from carriers import CARRIERS
 from carriers.base import CarrierUnavailable, ParseError, TrackResult
-from carriers.seventeentrack import CARRIER_CODES
+from carriers.seventeentrack import API_KEY_ENV, CARRIER_CODES
 
 
 def _render(result: TrackResult, carrier_name: str) -> str:
@@ -101,6 +102,161 @@ def _emit(result: TrackResult, carrier_name: str, as_json: bool) -> None:
         print(_render(result, carrier_name))
 
 
+# ── --refresh-pending：對未結案清單逐一即時查詢 ─────────────────────────
+#
+# 沿用單號查詢的既有路徑（同一個 adapter.track()），差別只在「批次」：逐筆 fail-fast、
+# 一筆失敗不中止整批（spec 需求 1）。不加重試、不加並行——README 的 Limitations 段
+# 講得很白：「個人低頻查詢，無重試迴圈、無並行」，這裡沒有理由破例。
+
+@dataclass
+class RefreshOutcome:
+    number: str
+    carrier_code: str
+    carrier_name: str
+    category: str  # 新結案 / 有新進度 / 無變化 / 已略過 / 查詢失敗
+    status: str = ""
+    event_time: str = ""
+    detail: str = ""  # 已略過／查詢失敗時的原因；其餘分類不使用
+
+
+_REFRESH_CATEGORIES = ("新結案", "有新進度", "無變化", "已略過", "查詢失敗")
+
+
+def _refresh_query_plan(carrier_code: str) -> tuple[str, object]:
+    """判斷某筆紀錄的貨運代號要怎麼查。
+
+    回傳 ("direct", adapter) | ("17track", 數字碼或 None) | ("unknown", None)。
+
+    正常流程下 history 裡永遠不會出現 17TRACK 相關的 carrier（--via-17track 的結果
+    刻意不記錄，見 history.py 與 CHANGELOG v0.2.1）；這裡處理的是手動編輯過的紀錄檔——
+    「毀損」不只是整檔 JSON 壞掉，也包含塞進去一個現在查不到的貨運代號。
+    """
+    if carrier_code in CARRIERS and carrier_code != "17track":
+        return "direct", CARRIERS[carrier_code]
+    if carrier_code == "17track":
+        return "17track", None
+    if carrier_code in CARRIER_CODES:
+        return "17track", CARRIER_CODES[carrier_code]
+    return "unknown", None
+
+
+def _try_query(fn) -> tuple[TrackResult | None, str]:
+    """統一單筆查詢的例外分類；回傳 (result, error_detail)，成功時 error_detail 為空字串。
+
+    對齊主查詢路徑（run() 自動模式）用的三種例外，差別是這裡的呼叫端是逐筆迴圈，
+    永遠不會讓一筆的例外中止整批。
+    """
+    try:
+        return fn(), ""
+    except CarrierUnavailable as e:
+        return None, str(e)
+    except ParseError as e:
+        return None, str(e)
+    except requests.RequestException as e:
+        return None, describe_network_error(e)
+
+
+def _classify_refresh(entry: dict, result: TrackResult) -> tuple[str, str, str]:
+    """比對新查到的最新事件與紀錄快照，回傳 (category, status, event_time)。
+
+    entry 一律來自 history.pending()，保證 looks_complete 不為真——因此「新結案」
+    不必比較新舊，新狀態現在算完成就成立；不算完成時才需要比對是否與快照不同。
+    """
+    latest = result.latest
+    status = latest.status if latest else ""
+    event_time = latest.time if latest else ""
+    if history.looks_complete(status):
+        return "新結案", status, event_time
+    changed = (status != (entry.get("last_status") or "")
+              or event_time != (entry.get("last_event_time") or ""))
+    return ("有新進度" if changed else "無變化"), status, event_time
+
+
+def _refresh_entry(number: str, entry: dict, *, no_record: bool) -> RefreshOutcome:
+    """對一筆未結案紀錄做即時查詢。不 raise——任何例外都收斂成一個 RefreshOutcome。"""
+    carrier_code = entry.get("carrier") or ""
+    carrier_name = _carrier_name(entry)
+    # payload 依 plan 而異："direct" 時是 adapter 物件，"17track" 時是數字碼（或 None，
+    # 讓 17TRACK 自己判別）；分岐後各自取用，變數名不共用才不會混淆兩種意義。
+    plan, payload = _refresh_query_plan(carrier_code)
+
+    if plan == "unknown":
+        return RefreshOutcome(number, carrier_code, carrier_name, "查詢失敗",
+                              detail=f"無法辨識的貨運代號：{carrier_code or '（空白）'}"
+                                     f"（可能是手動編輯過的紀錄）")
+
+    if plan == "17track":
+        key = os.environ.get(API_KEY_ENV, "").strip()
+        if not key:
+            # 需求 5：沒設 key 就清楚略過，不真的打出去、不算失敗——17TRACK 的額度
+            # 是使用者自己的錢，--refresh-pending 不該替他決定要不要花。
+            via = f" --carrier {carrier_code}" if carrier_code != "17track" else ""
+            return RefreshOutcome(
+                number, carrier_code, carrier_name, "已略過",
+                detail=(f"17TRACK 未設定 API key（環境變數 {API_KEY_ENV}）——"
+                        f"設定後可重跑 --refresh-pending，或手動查一次："
+                        f"track.py {number}{via} --via-17track"))
+        adapter = CARRIERS["17track"]
+        numeric_code = payload
+        result, err = _try_query(lambda: adapter.track(number, carrier_code=numeric_code))
+    else:
+        adapter = payload
+        result, err = _try_query(lambda: adapter.track(number))
+
+    if result is None:
+        return RefreshOutcome(number, carrier_code, carrier_name, "查詢失敗", detail=err)
+    if not result.found:
+        return RefreshOutcome(number, carrier_code, carrier_name, "查詢失敗",
+                              detail="查無資料（單號未登錄、輸入錯誤，或已超過該站保留期限）")
+
+    category, status, event_time = _classify_refresh(entry, result)
+    if not no_record:
+        try:
+            history.record(result)
+        except OSError as e:
+            # 與單號查詢路徑同一個保證：紀錄寫不進去也不能讓這筆查到的結果消失。
+            print(f"（{number} 查詢紀錄寫入失敗，本次結果未更新：{e}）", file=sys.stderr)
+    return RefreshOutcome(number, carrier_code, carrier_name, category, status, event_time)
+
+
+def _render_refresh_digest(outcomes: list[RefreshOutcome]) -> str:
+    counts = {c: 0 for c in _REFRESH_CATEGORIES}
+    for o in outcomes:
+        counts[o.category] += 1
+    lines = [f"未結案包裹更新（{len(outcomes)} 筆，依最後事件時間新→舊逐一查詢）", "",
+             "　".join(f"{c} {counts[c]}" for c in _REFRESH_CATEGORIES if counts[c])]
+    for cat in _REFRESH_CATEGORIES:
+        rows = [o for o in outcomes if o.category == cat]
+        if not rows:
+            continue
+        lines.append("")
+        lines.append(f"── {cat}（{len(rows)}）──")
+        for o in rows:
+            if cat in ("已略過", "查詢失敗"):
+                lines.append(f"{o.number}　{o.carrier_name}　{o.detail}")
+            else:
+                lines.append(f"{o.number}　{o.carrier_name}　{o.status}　{o.event_time}")
+    return "\n".join(lines)
+
+
+def _run_refresh_pending(args) -> int:
+    data = history.entries()
+    if not data:
+        print("查詢紀錄是空的")
+        return 0
+    rows = history.pending(data)
+    if not rows:
+        # 跟 --pending 同一個區分：「沒紀錄」與「全都到了」不是同一句話。
+        print(f"沒有未結案的包裹（{len(data)} 筆全部已完成，可用 --forget-all 清掉）")
+        return 0
+    # 序列、非並行——揭露在查詢之前，讓使用者知道這可能要花一點時間（無重試、無並行
+    # 是專案既定立場，見 README Limitations）。
+    print(f"（即將對 {len(rows)} 筆未結案包裹逐一即時查詢，依序不並行——需要一點時間）\n")
+    outcomes = [_refresh_entry(num, entry, no_record=args.no_record) for num, entry in rows]
+    print(_render_refresh_digest(outcomes))
+    return 0
+
+
 def run(argv: list[str]) -> int:
     p = argparse.ArgumentParser(prog="parcel-kau-a", description="台灣包裹追蹤")
     p.add_argument("number", nargs="?", help="包裹單號")
@@ -121,6 +277,8 @@ def run(argv: list[str]) -> int:
                    help="列出查詢紀錄")
     p.add_argument("--pending", action="store_true", dest="show_pending",
                    help="只列出尚未結案的包裹（純讀本機紀錄，不發任何查詢請求）")
+    p.add_argument("--refresh-pending", action="store_true", dest="refresh_pending",
+                   help="對每筆未結案紀錄逐一即時查詢，回報彙整摘要並更新本機紀錄快照")
     p.add_argument("--endpoints", action="store_true", dest="show_endpoints",
                    help="列出目前生效的各家查詢網址（可在設定檔覆寫）")
     args = p.parse_args(argv)
@@ -172,6 +330,8 @@ def run(argv: list[str]) -> int:
             print(f"{num}　{_carrier_name(e)}　{e.get('last_status', '')}"
                   f"　{e.get('last_event_time', '')}{_age_note(e)}")
         return 0
+    if args.refresh_pending:
+        return _run_refresh_pending(args)
 
     if not args.number:
         p.error("需要包裹單號（或使用 --history / --forget / --forget-all）")

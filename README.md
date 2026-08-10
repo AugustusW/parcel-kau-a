@@ -46,6 +46,9 @@ repeat per parcel                     --json to pipe onward
   of five — a local record you can list and delete (`--history`, `--forget`)
 - ✓ `--pending` answers "which of my parcels are still on the way?" from that local record, with
   no network request at all — a snapshot of what each parcel last reported, and how long ago
+- ✓ `--refresh-pending` answers "what's the status of everything still pending, *right now*?" —
+  it live-queries each unresolved number in turn, updates the local snapshot, and prints a digest
+  grouped by outcome (newly delivered / changed / unchanged / skipped / failed)
 - ✓ No telemetry, no analytics, nothing leaves your machine except the courier request itself
 
 ## Install
@@ -82,6 +85,7 @@ python3 scripts/track.py TW254414081298F --carrier spx   # Shopee SPX
 python3 scripts/track.py 900000000001 --json             # machine-readable
 
 python3 scripts/track.py --pending                       # what is still on the way
+python3 scripts/track.py --refresh-pending               # live-query everything still pending
 python3 scripts/track.py --history                       # what has been remembered
 python3 scripts/track.py --forget 900000000001           # forget one number
 python3 scripts/track.py --forget-all                    # forget everything
@@ -109,10 +113,37 @@ coming?":
 
 That list comes entirely from the local record and **makes no request**, so it shows what each
 parcel reported the last time you looked it up; `（N 天沒更新）` is how long ago that event was.
-To find out where a parcel is right now, look its number up again.
+To find out where a parcel is right now, look its number up again — or refresh all of them at once:
 
-In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"* or
-*"還有哪些包裹在路上"* and the skill handles it.
+```text
+未結案包裹更新（2 筆，依最後事件時間新→舊逐一查詢）
+
+新結案 1　無變化 1
+
+── 新結案（1）──
+900000000001　黑貓宅急便　順利送達　2026/08/08 11:02
+
+── 無變化（1）──
+900000000002　台灣宅配通　已到轉運站　2026/7/20 09:05
+```
+
+`--refresh-pending` walks the same local list `--pending` reads, but instead of printing the
+stored snapshot it live-queries each number — one at a time, through the same per-carrier path a
+single lookup uses — and sorts the results into a digest: 新結案 (delivered since the last check),
+有新進度 (the latest event changed but the parcel isn't done), 無變化, 已略過, and 查詢失敗. A
+successful refresh overwrites that number's stored snapshot, the same way an ordinary lookup does
+(`--no-record` still suppresses that). One courier failing doesn't stop the rest of the batch —
+each number's own outcome, including its error, is what you see in its row. If a pending entry
+names a courier that needs the [17TRACK bridge](#17track-optional) and no key is configured, it's
+reported as 已略過 with the reason rather than as a failure — and, since it isn't 17TRACK's call to
+make, nothing is sent to them without a key present.
+
+Both commands answer different questions, deliberately: `--pending` is instant and free because it
+never leaves your machine; `--refresh-pending` costs one request per pending parcel and takes
+proportionally longer, because it's asking each courier again.
+
+In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"*,
+*"還有哪些包裹在路上"*, or *"幫我更新一下未結案包裹"* and the skill handles it.
 
 ## Coverage
 
@@ -197,7 +228,12 @@ shape. The couriers are not similar under the hood:
   mode `0600`. The point is the next lookup: with a record, the number goes to **one** courier
   instead of being tried against five. Failed lookups are never recorded, `--no-record` skips
   writing, `--history` lists everything, `--pending` narrows that to the parcels still in transit
-  (read-only, no request), and `--forget` / `--forget-all` delete it.
+  (read-only, no request), `--refresh-pending` live-queries that same narrowed list and rewrites
+  each entry's snapshot with what comes back, and `--forget` / `--forget-all` delete it.
+- **`--refresh-pending` never re-broadcasts a number.** Every pending entry already has a known
+  courier — that is what got it into the record — so refreshing it sends the number back to that
+  one company again, the same disclosure profile as passing `--carrier` explicitly. It does not
+  redo auto-detection against the other four.
 - **Where that file lives, precisely.** On macOS, Time Machine excludes `~/Library/Caches` but
   **not** `~/.cache` — so this file is included in backups. If a number shouldn't persist anywhere,
   use `--no-record`, or `--forget` it once the parcel arrives (the CLI points this out for you when
@@ -222,6 +258,8 @@ shape. The couriers are not similar under the hood:
   returning empty results.
 - Intended for **personal, low-volume** lookups. There is no retry loop and no concurrency;
   requests time out at 10 seconds and fail fast. Do not point this at a queue of numbers.
+  `--refresh-pending` is no exception — it queries the pending list sequentially, one request at a
+  time, and simply takes longer the more parcels are still open.
 - **Kerry TJ's own form asks you to accept their legal/privacy notice before searching.** This
   tool calls the underlying endpoint directly and therefore does not surface that checkbox —
   by using it you take on responsibility for complying with their terms.
@@ -285,7 +323,7 @@ recording how the request was made and what the response looked like on the capt
 
 ## Status
 
-v0.3.0 ([CHANGELOG](./CHANGELOG.md)) — 158 offline unit tests. Verification status differs per
+v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 175 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |
