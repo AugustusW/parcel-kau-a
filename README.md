@@ -46,6 +46,9 @@ repeat per parcel                     --json to pipe onward
   of five — a local record you can list and delete (`--history`, `--forget`)
 - ✓ `--pending` answers "which of my parcels are still on the way?" from that local record, with
   no network request at all — a snapshot of what each parcel last reported, and how long ago
+- ✓ `--refresh-pending` answers "what's the status of everything still pending, *right now*?" —
+  it live-queries each unresolved number in turn, updates the local snapshot, and prints a digest
+  grouped by outcome (newly delivered / changed / unchanged / skipped / failed)
 - ✓ No telemetry, no analytics, nothing leaves your machine except the courier request itself
 
 ## Install
@@ -82,6 +85,7 @@ python3 scripts/track.py TW254414081298F --carrier spx   # Shopee SPX
 python3 scripts/track.py 900000000001 --json             # machine-readable
 
 python3 scripts/track.py --pending                       # what is still on the way
+python3 scripts/track.py --refresh-pending               # live-query everything still pending
 python3 scripts/track.py --history                       # what has been remembered
 python3 scripts/track.py --forget 900000000001           # forget one number
 python3 scripts/track.py --forget-all                    # forget everything
@@ -109,10 +113,37 @@ coming?":
 
 That list comes entirely from the local record and **makes no request**, so it shows what each
 parcel reported the last time you looked it up; `（N 天沒更新）` is how long ago that event was.
-To find out where a parcel is right now, look its number up again.
+To find out where a parcel is right now, look its number up again — or refresh all of them at once:
 
-In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"* or
-*"還有哪些包裹在路上"* and the skill handles it.
+```text
+未結案包裹更新（2 筆，依最後事件時間新→舊逐一查詢）
+
+新結案 1　無變化 1
+
+── 新結案（1）──
+900000000001　黑貓宅急便　順利送達　2026/08/08 11:02
+
+── 無變化（1）──
+900000000002　台灣宅配通　已到轉運站　2026/7/20 09:05
+```
+
+`--refresh-pending` walks the same local list `--pending` reads, but instead of printing the
+stored snapshot it live-queries each number — one at a time, through the same per-carrier path a
+single lookup uses — and sorts the results into a digest: 新結案 (delivered since the last check),
+有新進度 (the latest event changed but the parcel isn't done), 無變化, 已略過, and 查詢失敗. A
+successful refresh overwrites that number's stored snapshot, the same way an ordinary lookup does
+(`--no-record` still suppresses that). One courier failing doesn't stop the rest of the batch —
+each number's own outcome, including its error, is what you see in its row. If a pending entry
+names a courier that needs the [17TRACK bridge](#17track-optional) and no key is configured, it's
+reported as 已略過 with the reason rather than as a failure — and, since it isn't 17TRACK's call to
+make, nothing is sent to them without a key present.
+
+Both commands answer different questions, deliberately: `--pending` is instant and free because it
+never leaves your machine; `--refresh-pending` costs one request per pending parcel and takes
+proportionally longer, because it's asking each courier again.
+
+In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"*,
+*"還有哪些包裹在路上"*, or *"幫我更新一下未結案包裹"* and the skill handles it.
 
 ## Coverage
 
@@ -165,6 +196,55 @@ Design constraints, deliberately:
   its own terms and privacy policy — unlike the direct couriers, where the number only reaches
   the company that issued it.
 
+### Walkthrough: tracking a 全家 or 7-ELEVEN parcel
+
+全家店到店 and 7-ELEVEN 交貨便 are two of the four couriers this project cannot read directly —
+their tracking forms sit behind a CAPTCHA (see [Coverage](#coverage)) — so 17TRACK is the only
+path this skill has to either of them.
+
+1. **Get a key.** Sign up at [api.17track.net](https://api.17track.net); the free tier is 200
+   one-time lookups (for accounts created after 2026-01-07). The key lives somewhere in their own
+   dashboard under an API/token section — 17TRACK's own UI, not something this project controls,
+   so the exact menu wording may drift.
+2. **Export it once per shell session** (or put it in your shell profile):
+   ```bash
+   export PARCEL_KAU_A_17TRACK_KEY=...
+   ```
+3. **Query the parcel**, naming which of the two it is:
+   ```bash
+   python3 scripts/track.py <你的單號> --via-17track --carrier famiport       # 全家店到店
+   python3 scripts/track.py <你的單號> --via-17track --carrier seven-eleven   # 7-ELEVEN 交貨便
+   ```
+   Omitting `--carrier` lets 17TRACK guess the courier itself instead of you naming it; naming it
+   is one fewer thing that can go wrong.
+
+**Honesty about what "works" means here.** The 17TRACK adapter's parser (`parse_response` in
+`scripts/carriers/seventeentrack.py`) is tested against 17TRACK's *documented* API schema —
+`tests/test_seventeentrack.py` builds payloads by hand from their published field names
+(`time_iso`/`time_raw`, `description`, `providers[].events[]`, and so on), the same schema
+regardless of which underlying courier is being tracked. What that verifies is that this
+project's code handles the shape 17TRACK says it returns. It does **not** verify that a real
+全家 or 7-11 shipment actually comes back in that shape — nobody has run a real parcel from either
+courier through this path yet and captured what 17TRACK sent back. If you have one in transit and
+are willing to help close that gap, `scripts/capture_fixture.py` (see [Develop](#develop)) can
+capture and de-identify a real response for exactly this purpose — that is what it exists for.
+
+The output *shape* below is real — every `--via-17track` query renders through the same code path
+as a direct lookup, and that path is exercised by tests. The *content* is not: it is illustrative,
+built from 17TRACK's documented event fields, not a real 全家/7-11 response.
+
+```text
+⚠️ 這是根據官方文件畫出來的欄位形狀示意，不是真實包裹的擷取結果——目前沒有人拿真實
+全家或 7-11 包裹跑過這條路徑，確認官方文件講的形狀是否真的照著回。
+
+17TRACK　<你的單號>
+
+2026/01/15 18:30　順利投遞　（示意：description 欄位）
+2026/01/15 09:12　已收寄
+
+來源：https://t.17track.net/
+```
+
 ## Auto-detection, honestly
 
 T-cat, Kerry TJ, e-can, PChome Express, and Fusheng all issue **12-digit numeric** tracking
@@ -197,7 +277,12 @@ shape. The couriers are not similar under the hood:
   mode `0600`. The point is the next lookup: with a record, the number goes to **one** courier
   instead of being tried against five. Failed lookups are never recorded, `--no-record` skips
   writing, `--history` lists everything, `--pending` narrows that to the parcels still in transit
-  (read-only, no request), and `--forget` / `--forget-all` delete it.
+  (read-only, no request), `--refresh-pending` live-queries that same narrowed list and rewrites
+  each entry's snapshot with what comes back, and `--forget` / `--forget-all` delete it.
+- **`--refresh-pending` never re-broadcasts a number.** Every pending entry already has a known
+  courier — that is what got it into the record — so refreshing it sends the number back to that
+  one company again, the same disclosure profile as passing `--carrier` explicitly. It does not
+  redo auto-detection against the other four.
 - **Where that file lives, precisely.** On macOS, Time Machine excludes `~/Library/Caches` but
   **not** `~/.cache` — so this file is included in backups. If a number shouldn't persist anywhere,
   use `--no-record`, or `--forget` it once the parcel arrives (the CLI points this out for you when
@@ -222,6 +307,8 @@ shape. The couriers are not similar under the hood:
   returning empty results.
 - Intended for **personal, low-volume** lookups. There is no retry loop and no concurrency;
   requests time out at 10 seconds and fail fast. Do not point this at a queue of numbers.
+  `--refresh-pending` is no exception — it queries the pending list sequentially, one request at a
+  time, and simply takes longer the more parcels are still open.
 - **Kerry TJ's own form asks you to accept their legal/privacy notice before searching.** This
   tool calls the underlying endpoint directly and therefore does not surface that checkbox —
   by using it you take on responsibility for complying with their terms.
@@ -283,9 +370,38 @@ python3 -m pytest tests -q          # offline; no network, no fixtures downloade
 Parsers are tested against captured fixtures in `tests/fixtures/`, each with a `*_notes.md`
 recording how the request was made and what the response looked like on the capture date.
 
+### Capturing real fixtures (contributors)
+
+Kerry TJ, e-can, and PChome Express's found-path parsers currently run against *synthetic*
+fixtures — real field names and structure, but values nobody has actually seen a courier return
+(see [Status](#status)). If you have a real, in-transit tracking number for one of these and want
+to help close that gap:
+
+```bash
+python3 scripts/capture_fixture.py <真實單號> --carrier kerrytj
+python3 scripts/capture_fixture.py <真實單號> --carrier ecan
+python3 scripts/capture_fixture.py <真實單號> --carrier pchome
+python3 scripts/capture_fixture.py <真實單號> --carrier famiport --via-17track   # needs a 17TRACK key
+```
+
+This makes one live request through the same adapter code a normal lookup uses, then writes two
+files into `tests/fixtures/`: the de-identified raw response (`<carrier>_found_captured.<ext>`)
+and a notes skeleton (`<carrier>_found_captured_notes.md`) with a TODO checklist for folding it
+into the real fixture set. It also prints what the current parser extracted from that response, so
+you can eyeball whether the fields line up with what the page actually showed.
+
+**⚠️ De-identification is a first pass, not a guarantee.** Before writing the fixture, the tool
+replaces the real tracking number and scrubs phone numbers, ID-number-shaped strings, email
+addresses, and common Taiwan address patterns with conservative regexes. It does **not** attempt
+to detect Chinese personal names — a 2-4 character Chinese name has no reliable regex signature
+that would not also match ordinary status text, so that check is left to you entirely. **Open the
+captured file and read it before running `git add` on it.** SPX is not supported here: it scrapes
+a rendered page via Playwright rather than returning a single HTTP response this tool can
+intercept, so calibrating it still means opening browser devtools by hand.
+
 ## Status
 
-v0.3.0 ([CHANGELOG](./CHANGELOG.md)) — 158 offline unit tests. Verification status differs per
+v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 197 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

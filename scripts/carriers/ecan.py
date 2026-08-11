@@ -38,6 +38,8 @@ def parse_result_page(html: str, number: str) -> TrackResult:
         if "最新狀態" not in header:
             continue
         idx = {name: i for i, name in enumerate(header)}
+        # UNVERIFIED: 表頭為真實頁面所見，但實際 row 值需真實命中單號校準
+        # （見 tests/fixtures/ecan_notes.md；可用 scripts/capture_fixture.py 擷取）
         for tr in rows[1:]:
             cells = [c.get_text(strip=True) for c in tr.find_all("td")]
             if len(cells) < len(header):

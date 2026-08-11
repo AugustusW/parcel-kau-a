@@ -39,6 +39,8 @@ def parse_history_page(html: str, number: str) -> TrackResult:
     if table is None:
         raise ParseError("網家速配頁面結構已變，請回報 issue")
 
+    # UNVERIFIED: class 結構為真實頁面所見，但多筆歷程的實際內容需真實命中單號校準
+    # （見 tests/fixtures/pchome_notes.md；可用 scripts/capture_fixture.py 擷取）
     for row in table.select(".tr"):
         if "top" in (row.get("class") or []):
             continue

@@ -455,3 +455,220 @@ def test_history_write_failure_keeps_json_output_parseable(monkeypatch, capsys):
     monkeypatch.setattr(history, "record", lambda _r: (_ for _ in ()).throw(OSError("disk full")))
     track.run(["123456789012", "--carrier", "tcat", "--json"])
     json.loads(capsys.readouterr().out)
+
+
+# ── --refresh-pending：對未結案清單逐一即時查詢（spec 2026-08-11-parcel-refresh-pending）─
+
+def test_refresh_pending_reports_empty_history(hist_home, capsys):
+    """跟 --pending 一樣：兩種「沒東西」要分開講。"""
+    assert track.run(["--refresh-pending"]) == 0
+    assert "查詢紀錄是空的" in capsys.readouterr().out
+
+
+def test_refresh_pending_reports_all_complete(hist_home, capsys):
+    _remember("222222222222", "順利送達")
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "沒有未結案" in out
+    assert "--forget" in out
+
+
+def test_refresh_pending_sends_no_request_when_nothing_pending(monkeypatch, hist_home):
+    _remember("222222222222", "順利送達", carrier="tcat")
+    a = FakeAdapter("tcat", found=True)
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": a})
+    track.run(["--refresh-pending"])
+    assert a.calls == 0
+
+
+def test_refresh_pending_marks_newly_delivered_as_new_completion(monkeypatch, hist_home, capsys):
+    _remember("111111111111", "配送中", carrier="tcat", event_time="2026-07-01 09:00")
+    fresh = FakeAdapter("tcat", found=True, status="順利送達")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "新結案" in out
+    assert "111111111111" in out and "順利送達" in out
+
+
+def test_refresh_pending_marks_changed_status_as_progress(monkeypatch, hist_home, capsys):
+    """狀態變了，但新狀態還不算完成——不是新結案，是有新進度。"""
+    _remember("111111111111", "已集貨", carrier="tcat", event_time="2026-07-01 09:00")
+    fresh = FakeAdapter("tcat", found=True, status="配送中")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "有新進度" in out
+    assert "無變化" not in out
+    assert "新結案" not in out
+
+
+def test_refresh_pending_marks_unchanged_status_as_no_change(monkeypatch, hist_home, capsys):
+    """FakeAdapter 固定回 2026-08-01 10:00；紀錄用同一個時間+狀態才會判定無變化。"""
+    _remember("111111111111", "配送中", carrier="tcat")
+    fresh = FakeAdapter("tcat", found=True, status="配送中")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "無變化" in out
+    assert "111111111111" in out
+
+
+def test_refresh_pending_marks_network_error_as_failure(monkeypatch, hist_home, capsys):
+    import requests
+    _remember("111111111111", "配送中", carrier="tcat")
+    dead = FakeAdapter("tcat", raises=requests.exceptions.ConnectionError("boom"))
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": dead})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "查詢失敗" in out
+    assert "111111111111" in out
+
+
+def test_refresh_pending_marks_not_found_as_failure(monkeypatch, hist_home, capsys):
+    _remember("111111111111", "配送中", carrier="tcat")
+    gone = FakeAdapter("tcat", found=False)
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": gone})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "查詢失敗" in out
+    assert "查無資料" in out
+
+
+def test_refresh_pending_continues_after_one_item_fails(monkeypatch, hist_home, capsys):
+    """一家掛掉不該讓整批中止——換下一筆繼續（fail-fast per item, 不 fail-fast per batch）。"""
+    import requests
+    _remember("111111111111", "配送中", carrier="tcat", event_time="2026-07-01 09:00")
+    _remember("222222222222", "配送中", carrier="ecan", event_time="2026-08-01 09:00")
+    dead = FakeAdapter("tcat", raises=requests.exceptions.ConnectionError("boom"))
+    alive = FakeAdapter("ecan", found=True, status="順利送達")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": dead, "ecan": alive})
+    assert track.run(["--refresh-pending"]) == 0
+    assert alive.calls == 1
+    out = capsys.readouterr().out
+    assert "查詢失敗" in out and "111111111111" in out
+    assert "新結案" in out and "222222222222" in out
+
+
+def test_refresh_pending_treats_other_carrier_unavailable_as_failure_not_skip(
+        monkeypatch, hist_home, capsys):
+    """CarrierUnavailable 不是每種都算「略過」——SPX 缺 Playwright 仍是查詢失敗。"""
+    _remember("111111111111", "配送中", carrier="spx")
+    dead = FakeAdapter("spx", raises=CarrierUnavailable("SPX 需要 Playwright"))
+    monkeypatch.setattr(track, "CARRIERS", {"spx": dead})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "查詢失敗" in out
+    assert "Playwright" in out
+
+
+def test_refresh_pending_handles_unrecognized_carrier_gracefully(hist_home, capsys):
+    """手動編輯過的紀錄可能存了認不得的貨運代號——不可 raise，要列成查詢失敗。"""
+    import history
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text(
+        '{"111111111111": {"carrier": "not-a-real-carrier", "last_status": "配送中"}}',
+        encoding="utf-8")
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "111111111111" in out
+    assert "查詢失敗" in out
+
+
+def test_refresh_pending_updates_the_stored_snapshot(monkeypatch, hist_home):
+    """需求 3：更新後的結果要用 history.record 同一套機制寫回快照。"""
+    import history
+    _remember("111111111111", "配送中", carrier="tcat", event_time="2026-07-01 09:00")
+    fresh = FakeAdapter("tcat", found=True, status="順利送達")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    track.run(["--refresh-pending"])
+    entry = history.lookup_entry("111111111111")
+    assert entry["last_status"] == "順利送達"
+    assert entry["looks_complete"] is True
+
+
+def test_refresh_pending_no_record_suppresses_snapshot_update(monkeypatch, hist_home):
+    import history
+    _remember("111111111111", "配送中", carrier="tcat", event_time="2026-07-01 09:00")
+    fresh = FakeAdapter("tcat", found=True, status="順利送達")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    track.run(["--refresh-pending", "--no-record"])
+    entry = history.lookup_entry("111111111111")
+    assert entry["last_status"] == "配送中", "有 --no-record 就不該覆寫快照"
+
+
+def test_refresh_pending_write_failure_still_shows_result(monkeypatch, hist_home, capsys):
+    import history
+    _remember("111111111111", "配送中", carrier="tcat", event_time="2026-07-01 09:00")
+    fresh = FakeAdapter("tcat", found=True, status="順利送達")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    monkeypatch.setattr(history, "record", lambda _r: (_ for _ in ()).throw(OSError("disk full")))
+    assert track.run(["--refresh-pending"]) == 0
+    out, err = capsys.readouterr()
+    assert "新結案" in out
+    assert "disk full" in err
+
+
+def test_refresh_pending_skips_17track_carrier_without_key(monkeypatch, hist_home, capsys):
+    """spec 需求 5：17TRACK-only 貨運但沒設 key → 清楚略過，不是失敗、不是真的打出去。"""
+    import history
+    from carriers.seventeentrack import API_KEY_ENV
+    monkeypatch.delenv(API_KEY_ENV, raising=False)
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text(
+        '{"111111111111": {"carrier": "chunghwa-post", "last_status": "已收件"}}',
+        encoding="utf-8")
+    agg = FakeAdapter("17track")
+    monkeypatch.setattr(track, "CARRIERS", {"17track": agg})
+    assert track.run(["--refresh-pending"]) == 0
+    out = capsys.readouterr().out
+    assert "略過" in out
+    assert "17TRACK" in out
+    assert "111111111111" in out
+    assert "查詢失敗" not in out
+    assert agg.calls == 0, "沒 key 就不該真的打出去"
+
+
+def test_refresh_pending_queries_17track_carrier_when_key_present(monkeypatch, hist_home, capsys):
+    """有 key 時才真的呼叫，且要把 carrier 名稱翻成 17TRACK 數字碼。"""
+    import history
+    from carriers.seventeentrack import API_KEY_ENV
+    monkeypatch.setenv(API_KEY_ENV, "test-key")
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text(
+        '{"111111111111": {"carrier": "chunghwa-post", "last_status": "已收件"}}',
+        encoding="utf-8")
+    seen = {}
+
+    class _Agg(FakeAdapter):
+        def track(self, number, carrier_code=None):
+            seen["code"] = carrier_code
+            return super().track(number)
+
+    agg = _Agg("17track", found=True, status="順利送達")
+    monkeypatch.setattr(track, "CARRIERS", {"17track": agg})
+    assert track.run(["--refresh-pending"]) == 0
+    assert agg.calls == 1
+    assert seen["code"] == 20011  # chunghwa-post 的 17TRACK 數字碼
+    out = capsys.readouterr().out
+    assert "新結案" in out
+
+
+def test_refresh_pending_warns_once_about_a_corrupt_file(hist_home, capsys):
+    """跟 --pending 同一份 entries()/pending() 路徑，毀損警告一樣只該印一次。"""
+    import history
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text("{ not json", encoding="utf-8")
+    assert track.run(["--refresh-pending"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err.count("查詢紀錄無法讀取") == 1
+    assert "查詢紀錄是空的" in captured.out
+
+
+def test_refresh_pending_discloses_item_count_before_querying(monkeypatch, hist_home, capsys):
+    _remember("111111111111", "配送中", carrier="tcat")
+    fresh = FakeAdapter("tcat", found=True, status="配送中")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": fresh})
+    track.run(["--refresh-pending"])
+    out = capsys.readouterr().out
+    assert "1 筆" in out
