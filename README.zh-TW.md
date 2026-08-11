@@ -163,6 +163,38 @@ python3 scripts/track.py 83546610320956 --via-17track --carrier chunghwa-post
 - **獨立降級**：沒設 key 時只有這條路不可用，直連五家完全不受影響。
 - **第三方揭露**：使用它等於把單號送給 17TRACK 這個第三方，其有自己的條款與隱私政策——不同於直連模式，那裡單號只會到達發出它的貨運公司。
 
+### 實例走一遍：查全家或 7-ELEVEN 的包裹
+
+全家店到店與 7-ELEVEN 交貨便是本專案無法直連的四家之二——查詢表單都有圖形驗證碼（見[支援範圍](#支援範圍)）——所以 17TRACK 是這個 skill 唯一能碰到它們的路。
+
+1. **申請 key**：到 [api.17track.net](https://api.17track.net) 註冊，免費額度 200 筆（2026-01-07 後新帳號一次性）。key 放在他們自己後台某個 API/Token 相關的頁面——那是 17TRACK 自己的介面，本專案管不到，選單文字可能會變。
+2. **每個 shell session 匯出一次**（或寫進 shell profile）：
+   ```bash
+   export PARCEL_KAU_A_17TRACK_KEY=...
+   ```
+3. **查詢包裹，並明講是哪一家**：
+   ```bash
+   python3 scripts/track.py <你的單號> --via-17track --carrier famiport       # 全家店到店
+   python3 scripts/track.py <你的單號> --via-17track --carrier seven-eleven   # 7-ELEVEN 交貨便
+   ```
+   不加 `--carrier` 會讓 17TRACK 自己猜是哪家，明講可以少一個出錯的環節。
+
+**「測過」在這裡的意思要講清楚**：17TRACK adapter 的 parser（`scripts/carriers/seventeentrack.py` 的 `parse_response`）測的是 17TRACK **官方文件**寫的 schema——`tests/test_seventeentrack.py` 用他們公開的欄位名（`time_iso`/`time_raw`、`description`、`providers[].events[]` 等）手動組出 payload 來驗，不管底層是哪家貨運都是同一份 schema。這驗證的是本專案的程式碼有沒有正確處理「17TRACK 說它會回的形狀」，**不是**驗證真實的全家或 7-11 包裹真的會照這個形狀回來——目前還沒有人拿真實包裹跑過這條路徑、把 17TRACK 實際回的東西存下來確認過。如果你手上正好有一件在路上的全家或 7-11 包裹、願意幫忙補上這塊，`scripts/capture_fixture.py`（見[開發](#開發)）可以擷取並去識別化一份真實回應——這正是它存在的目的。
+
+輸出的**格式**是真的——每次 `--via-17track` 查詢都走跟直連查詢同一套程式碼路徑，這條路徑本身有測試覆蓋。**內容**不是：下面純粹是根據 17TRACK 官方文件畫出來的示意，不是真實回應。
+
+```text
+⚠️ 這是根據官方文件畫出來的欄位形狀示意，不是真實包裹的擷取結果——目前沒有人拿真實
+全家或 7-11 包裹跑過這條路徑，確認官方文件講的形狀是否真的照著回。
+
+17TRACK　<你的單號>
+
+2026/01/15 18:30　順利投遞　（示意：description 欄位）
+2026/01/15 09:12　已收寄
+
+來源：https://t.17track.net/
+```
+
 ## 關於自動判別
 
 黑貓、嘉里大榮、宅配通、網家速配、富昇的單號**都是 12 碼數字**，格式無從區分。不指定 `--carrier` 時會依序查詢、命中即停——最壞情況五次請求。蝦皮單號以 `TW` 開頭，可由格式判定。
@@ -232,9 +264,24 @@ python3 -m pytest tests -q          # 離線；不需網路、不下載 fixtures
 
 Parser 對照 `tests/fixtures/` 內擷取下來的回應測試，每份都附 `*_notes.md` 記錄當時的請求方式與回應樣貌。
 
+### 擷取真實 fixture（給貢獻者）
+
+嘉里大榮、宅配通、網家速配這三家的 found-path parser 目前跑在**合成** fixture 上——欄位名稱與結構是真的，但值沒有人真的看過貨運公司回過（見[狀態](#狀態)）。如果你手上有真實、還在路上的單號，想幫忙補上這塊：
+
+```bash
+python3 scripts/capture_fixture.py <真實單號> --carrier kerrytj
+python3 scripts/capture_fixture.py <真實單號> --carrier ecan
+python3 scripts/capture_fixture.py <真實單號> --carrier pchome
+python3 scripts/capture_fixture.py <真實單號> --carrier famiport --via-17track   # 需要 17TRACK key
+```
+
+這會走跟一般查詢同一套 adapter 程式碼發一次真實請求，然後在 `tests/fixtures/` 寫出兩個檔案：去識別化過的原始回應（`<carrier>_found_captured.<ext>`）與待補完的 notes 草稿（`<carrier>_found_captured_notes.md`，附 TODO 清單），並印出目前 parser 從這次回應抓到了哪些欄位，方便你對照頁面實際內容判斷抓得準不準。
+
+**⚠️ 去識別化只是第一道防線，不是保證。** 寫入前，工具會代換真實單號、並用保守的正則遮蔽電話號碼、身分證字號樣式、email、常見台灣地址樣式。它**不會**偵測中文姓名——2-4 個中文字的姓名沒有可靠的正則特徵能跟一般狀態文字區分開，這件事完全留給你自己判斷。**寫出來的檔案在 `git add` 之前一定要打開看過。** 蝦皮 SPX 不支援：它是靠 Playwright 現場渲染頁面，不是一個這支工具攔得到的單一 HTTP 回應，要校準還是得人工開瀏覽器開發者工具。
+
 ## 狀態
 
-v0.4.0（[CHANGELOG](./CHANGELOG.md)）——175 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
+v0.4.0（[CHANGELOG](./CHANGELOG.md)）——197 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
 
 | 貨運 | 查無資料路徑 | 有資料路徑 |
 |---|---|---|

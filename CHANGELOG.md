@@ -5,7 +5,9 @@ is tagged in git; the version lives here and in the git tag (SKILL.md carries no
 
 ## [0.4.0] - 2026-08-11
 
-`--pending` could say what a parcel last reported. It could not say what it reports now.
+`--pending` could say what a parcel last reported. It could not say what it reports now — and
+three of the six direct couriers' found-path parsers had never been checked against a real
+response at all. Both gaps get addressed this release.
 
 ### Added
 - **`--refresh-pending` live-queries every unresolved tracking number in the local history**,
@@ -31,9 +33,40 @@ is tagged in git; the version lives here and in the git tag (SKILL.md carries no
   posture the rest of the CLI has — see Limitations. A long pending list just takes proportionally
   longer; the CLI says so before the first request goes out, the same way auto-detect discloses
   which couriers it's about to try.
+- **`scripts/capture_fixture.py`**, a contributor-only tool that solves the actual bottleneck
+  behind Kerry TJ, e-can, and PChome Express's found-path parsers still running on synthetic
+  fixtures: nobody had a real in-transit number to test them against. Given one, it makes a live
+  request through the same adapter code a normal lookup uses, writes a de-identified copy of the
+  raw response into `tests/fixtures/` alongside a notes skeleton, and prints what the current
+  parser extracted from it so a contributor can eyeball whether the fields line up. It intercepts
+  at `requests.Session.request` — the one layer both the plain `requests.get`/`.post` carriers and
+  T-cat's own `Session()` share — rather than duplicating each adapter's request-building logic,
+  so what gets captured is guaranteed to be exactly what a real lookup would have sent and
+  received. Also captures 17TRACK responses (famiport/seven-eleven and friends) when
+  `PARCEL_KAU_A_17TRACK_KEY` is set. SPX is explicitly out of scope and says so: it drives a
+  headless browser to render a page rather than returning one HTTP response, so there is nothing
+  at that interception point to capture — calibrating it still means opening devtools by hand.
+- **De-identification before anything touches disk**: the real tracking number is replaced with a
+  same-length, same-character-class placeholder, and conservative regexes scrub phone numbers,
+  ID-number-shaped strings, emails, and common Taiwan address patterns. This is stated plainly as
+  a first pass, not a guarantee — Chinese personal names have no regex signature reliable enough
+  to distinguish from ordinary status text, so that check isn't attempted, and the tool prints a
+  loud warning (also in `--help` and the README) to open the file and read it before committing.
+- **README walkthrough for the two CAPTCHA couriers most people actually want**: registering for
+  a 17TRACK key, the exact `--carrier famiport` / `--carrier seven-eleven` commands, and an
+  explicit statement of what "tested" means here — the parser matches 17TRACK's *documented*
+  schema, which is all `tests/test_seventeentrack.py` can check offline; no real 全家/7-11 parcel
+  has been run through it to confirm 17TRACK actually returns that shape for either courier. The
+  example output in that section is schema-based and labeled as such, not presented as a real
+  capture.
+
+### Fixed
+- **e-can and PChome Express's found-path parsers had no `UNVERIFIED` marker in the code**, even
+  though their fixtures and notes both say the row/field values are synthetic — Kerry TJ and SPX
+  already carried the comment, these two didn't. Source and docs now agree.
 
 ### Notes
-- 175 offline unit tests.
+- 197 offline unit tests.
 
 ## [0.3.0] - 2026-08-07
 

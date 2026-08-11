@@ -196,6 +196,55 @@ Design constraints, deliberately:
   its own terms and privacy policy — unlike the direct couriers, where the number only reaches
   the company that issued it.
 
+### Walkthrough: tracking a 全家 or 7-ELEVEN parcel
+
+全家店到店 and 7-ELEVEN 交貨便 are two of the four couriers this project cannot read directly —
+their tracking forms sit behind a CAPTCHA (see [Coverage](#coverage)) — so 17TRACK is the only
+path this skill has to either of them.
+
+1. **Get a key.** Sign up at [api.17track.net](https://api.17track.net); the free tier is 200
+   one-time lookups (for accounts created after 2026-01-07). The key lives somewhere in their own
+   dashboard under an API/token section — 17TRACK's own UI, not something this project controls,
+   so the exact menu wording may drift.
+2. **Export it once per shell session** (or put it in your shell profile):
+   ```bash
+   export PARCEL_KAU_A_17TRACK_KEY=...
+   ```
+3. **Query the parcel**, naming which of the two it is:
+   ```bash
+   python3 scripts/track.py <你的單號> --via-17track --carrier famiport       # 全家店到店
+   python3 scripts/track.py <你的單號> --via-17track --carrier seven-eleven   # 7-ELEVEN 交貨便
+   ```
+   Omitting `--carrier` lets 17TRACK guess the courier itself instead of you naming it; naming it
+   is one fewer thing that can go wrong.
+
+**Honesty about what "works" means here.** The 17TRACK adapter's parser (`parse_response` in
+`scripts/carriers/seventeentrack.py`) is tested against 17TRACK's *documented* API schema —
+`tests/test_seventeentrack.py` builds payloads by hand from their published field names
+(`time_iso`/`time_raw`, `description`, `providers[].events[]`, and so on), the same schema
+regardless of which underlying courier is being tracked. What that verifies is that this
+project's code handles the shape 17TRACK says it returns. It does **not** verify that a real
+全家 or 7-11 shipment actually comes back in that shape — nobody has run a real parcel from either
+courier through this path yet and captured what 17TRACK sent back. If you have one in transit and
+are willing to help close that gap, `scripts/capture_fixture.py` (see [Develop](#develop)) can
+capture and de-identify a real response for exactly this purpose — that is what it exists for.
+
+The output *shape* below is real — every `--via-17track` query renders through the same code path
+as a direct lookup, and that path is exercised by tests. The *content* is not: it is illustrative,
+built from 17TRACK's documented event fields, not a real 全家/7-11 response.
+
+```text
+⚠️ 這是根據官方文件畫出來的欄位形狀示意，不是真實包裹的擷取結果——目前沒有人拿真實
+全家或 7-11 包裹跑過這條路徑，確認官方文件講的形狀是否真的照著回。
+
+17TRACK　<你的單號>
+
+2026/01/15 18:30　順利投遞　（示意：description 欄位）
+2026/01/15 09:12　已收寄
+
+來源：https://t.17track.net/
+```
+
 ## Auto-detection, honestly
 
 T-cat, Kerry TJ, e-can, PChome Express, and Fusheng all issue **12-digit numeric** tracking
@@ -321,9 +370,38 @@ python3 -m pytest tests -q          # offline; no network, no fixtures downloade
 Parsers are tested against captured fixtures in `tests/fixtures/`, each with a `*_notes.md`
 recording how the request was made and what the response looked like on the capture date.
 
+### Capturing real fixtures (contributors)
+
+Kerry TJ, e-can, and PChome Express's found-path parsers currently run against *synthetic*
+fixtures — real field names and structure, but values nobody has actually seen a courier return
+(see [Status](#status)). If you have a real, in-transit tracking number for one of these and want
+to help close that gap:
+
+```bash
+python3 scripts/capture_fixture.py <真實單號> --carrier kerrytj
+python3 scripts/capture_fixture.py <真實單號> --carrier ecan
+python3 scripts/capture_fixture.py <真實單號> --carrier pchome
+python3 scripts/capture_fixture.py <真實單號> --carrier famiport --via-17track   # needs a 17TRACK key
+```
+
+This makes one live request through the same adapter code a normal lookup uses, then writes two
+files into `tests/fixtures/`: the de-identified raw response (`<carrier>_found_captured.<ext>`)
+and a notes skeleton (`<carrier>_found_captured_notes.md`) with a TODO checklist for folding it
+into the real fixture set. It also prints what the current parser extracted from that response, so
+you can eyeball whether the fields line up with what the page actually showed.
+
+**⚠️ De-identification is a first pass, not a guarantee.** Before writing the fixture, the tool
+replaces the real tracking number and scrubs phone numbers, ID-number-shaped strings, email
+addresses, and common Taiwan address patterns with conservative regexes. It does **not** attempt
+to detect Chinese personal names — a 2-4 character Chinese name has no reliable regex signature
+that would not also match ordinary status text, so that check is left to you entirely. **Open the
+captured file and read it before running `git add` on it.** SPX is not supported here: it scrapes
+a rendered page via Playwright rather than returning a single HTTP response this tool can
+intercept, so calibrating it still means opening browser devtools by hand.
+
 ## Status
 
-v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 175 offline unit tests. Verification status differs per
+v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 197 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |

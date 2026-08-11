@@ -64,6 +64,10 @@ python3 scripts/track.py <單號> --via-17track --carrier chunghwa-post   # 指�
 
 ⚠️ **重要**：17TRACK 會消耗使用者自己的額度（免費 200 筆），所以**絕不自動使用** —— 只有明確加 `--via-17track` 才會呼叫。單號無法判別時 CLI 會提示這個選項，但不會自作主張去打。未設 key 時只有這條路不可用，直連五家照常。
 
+⚠️ **全家 / 7-11 誠實揭露**：`famiport`／`seven-eleven` 兩個 carrier code 的 parser 只驗證過
+17TRACK 官方文件寫的 schema，還沒有人拿真實包裹跑過這條路徑確認過。回報結果時如果是這兩家，
+順口帶一句「這條路徑的資料形狀還沒拿真實包裹驗證過」，別講得像已經徹底驗證。
+
 ## momo 訂單的判斷
 
 momo 出貨雙軌：自營走**富昇**（`--carrier fusheng`），委外則走黑貓／宅配通／新竹。
