@@ -14,7 +14,7 @@ from typing import Optional, Protocol
 REQUEST_TIMEOUT = 10  # 秒；所有 adapter 共用，fail fast 不重試
 # 版本只在這裡定義一次；USER_AGENT 由它推導，避免發版時忘了同步（外部 review v0.2.0
 # 指出 v0.2.0 出貨後 UA 仍停在 0.1.0）。
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 USER_AGENT = f"parcel-kau-a/{VERSION}"
 
 
