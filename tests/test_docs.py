@@ -42,12 +42,15 @@ def _collected_count():
 
 
 def test_readme_status_version_matches_the_newest_changelog_entry():
-    stated = STATUS_VERSION_RE.search(_read(README))
-    assert stated, "README.md has no 'vX.Y.Z ([CHANGELOG]...)' Status line"
+    stated = STATUS_VERSION_RE.findall(_read(README))
+    assert len(stated) == 1, (
+        f"README.md has {len(stated)} Status version lines; a stale duplicate "
+        "survives first-wins reading, keep exactly one"
+    )
     entries = CHANGELOG_ENTRY_RE.findall(_read(CHANGELOG))
     assert entries, "CHANGELOG.md has no '## [x.y.z]' entries"
-    assert stated.group(1) == entries[0], (
-        f"README Status says v{stated.group(1)} but the newest CHANGELOG entry "
+    assert stated[0] == entries[0], (
+        f"README Status says v{stated[0]} but the newest CHANGELOG entry "
         f"is {entries[0]}"
     )
 
