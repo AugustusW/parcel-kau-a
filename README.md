@@ -401,7 +401,7 @@ intercept, so calibrating it still means opening browser devtools by hand.
 
 ## Status
 
-v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 197 offline unit tests. Verification status differs per
+v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 199 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | not-found path | found path |
