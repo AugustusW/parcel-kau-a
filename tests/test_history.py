@@ -122,8 +122,10 @@ def test_corrupt_file_is_not_silently_overwritten_on_read(home):
 
 def test_write_is_atomic_leaving_no_temp_files(home):
     history.record(_found())
+    # .mutation.lock 是常駐的鎖檔（內容為空，由 OS 檔案鎖管理），不是寫入殘留
+    import storage
     leftovers = [p.name for p in history.path().parent.iterdir()
-                 if p.name != history.path().name]
+                 if p.name not in (history.path().name, storage.LOCK_NAME)]
     assert leftovers == [], f"寫入後不該留暫存檔：{leftovers}"
 
 
@@ -263,3 +265,29 @@ def test_days_since_last_event_clamps_future_times_to_zero():
     """站方時間比本機時鐘快（或使用者時鐘慢）時不該出現負天數。"""
     assert history.days_since_last_event({"last_event_time": "2026/08/09 10:00"},
                                          now=datetime(2026, 8, 7)) == 0
+
+
+def test_corrupt_file_is_quarantined_not_overwritten(home, capsys):
+    """寫入時遇到毀損檔：另存保留後重新記錄。直接覆寫等於靜默刪光紀錄，
+    拒絕寫入則讓紀錄功能永久停擺（architect 2026-10-17）。"""
+    history.path().parent.mkdir(parents=True, exist_ok=True)
+    history.path().write_text("{ not json", encoding="utf-8")
+    history.record(_found("123456789012"))
+    kept = list(history.home().glob("history.json.corrupt-*"))
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8") == "{ not json"
+    assert history.lookup("123456789012") == "tcat"
+    assert str(kept[0]) in capsys.readouterr().err
+
+
+def test_record_fails_fast_when_another_writer_holds_the_lock(home):
+    import storage
+    history.home().mkdir(parents=True, exist_ok=True)
+    held = open(history.home() / storage.LOCK_NAME, "a+b")
+    assert storage._try_lock(held)
+    try:
+        with pytest.raises(storage.LockBusy):
+            history.record(_found("123456789012"))
+    finally:
+        storage._unlock(held)
+        held.close()
+    assert not history.path().exists()

@@ -34,7 +34,8 @@ repeat per parcel                     --json to pipe onward
 ## Features
 
 - ✓ Six couriers, no credentials: 黑貓宅急便 (T-cat), 嘉里大榮 (Kerry TJ), 台灣宅配通 (e-can), 網家速配 (PChome Express), 富昇物流/momo (Fusheng), 蝦皮店到店 (Shopee SPX)
-- ✓ Carrier auto-detection, with `--carrier` to skip straight to one
+- ✓ Never guesses the courier: when a number's format fits several couriers, nothing is sent until
+  you pick one (`--carrier`) or agree to try them all (`--auto`)
 - ✓ Normalized output across couriers — same shape whichever site it came from
 - ✓ `--json` for machine consumption; human-readable timeline by default
 - ✓ T-cat returns the **full** history (the summary page shows only the latest scan; this follows through to the detail page)
@@ -45,10 +46,15 @@ repeat per parcel                     --json to pipe onward
 - ✓ Remembers which courier a number belongs to, so repeat lookups go to **one** company instead
   of five — a local record you can list and delete (`--history`, `--forget`)
 - ✓ `--pending` answers "which of my parcels are still on the way?" from that local record, with
-  no network request at all — a snapshot of what each parcel last reported, and how long ago
+  no network request at all. Every snapshot is labelled as one and shows both the courier's last
+  event time and when you last checked, so a week-old status is never mistaken for today's
+- ✓ Name your parcels (`--label`, `--find`): look one up as "earphones" instead of by its number.
+  When several names match, all of them are listed; the tool never picks one for you
 - ✓ `--refresh-pending` answers "what's the status of everything still pending, *right now*?" —
   it live-queries each unresolved number in turn, updates the local snapshot, and prints a digest
-  grouped by outcome (newly delivered / changed / unchanged / skipped / failed)
+  grouped by outcome (newly delivered / changed / unchanged / skipped / failed). Narrow it with
+  `--match`, `--carrier`, `--limit`, or preview it with `--dry-run`
+- ✓ Lists show only the last four digits of each number unless you ask (`--full-numbers`)
 - ✓ No telemetry, no analytics, nothing leaves your machine except the courier request itself
 
 ## Install
@@ -79,15 +85,22 @@ works in either host.
 ## Usage
 
 ```bash
-python3 scripts/track.py 900000000001                    # auto-detect
-python3 scripts/track.py 900000000001 --carrier tcat     # go straight to one
-python3 scripts/track.py TW254414081298F --carrier spx   # Shopee SPX
-python3 scripts/track.py 900000000001 --json             # machine-readable
+python3 scripts/track.py 900000000001 --carrier tcat     # query one courier
+python3 scripts/track.py TW254414081298F                 # SPX numbers identify themselves
+python3 scripts/track.py 900000000001                    # ambiguous: lists candidates, sends nothing (exit 8)
+python3 scripts/track.py 900000000001 --auto             # agree to try each matching courier in turn
+python3 scripts/track.py 900000000001 --carrier tcat --json      # machine-readable
 
-python3 scripts/track.py --pending                       # what is still on the way
+python3 scripts/track.py 900000000001 --carrier tcat --label "momo earphones"   # name it
+python3 scripts/track.py --find earphones                # find by name (no request)
+python3 scripts/track.py --rename 900000000001 "work earphones"
+python3 scripts/track.py --clear-label 900000000001
+
+python3 scripts/track.py --pending                       # what is still on the way (no request)
 python3 scripts/track.py --refresh-pending               # live-query everything still pending
+python3 scripts/track.py --refresh-pending --match earphones --dry-run   # preview a narrower refresh
 python3 scripts/track.py --history                       # what has been remembered
-python3 scripts/track.py --forget 900000000001           # forget one number
+python3 scripts/track.py --forget 900000000001           # forget one number and its name
 python3 scripts/track.py --forget-all                    # forget everything
 python3 scripts/track.py --endpoints                     # show the URLs in effect
 ```
@@ -99,51 +112,160 @@ python3 scripts/track.py --endpoints                     # show the URLs in effe
 2026/01/15 09:12　配送中
 
 來源：https://www.t-cat.com.tw/Inquire/TraceDetail.aspx?BillID=900000000001
+查詢時間：2026/01/15 19:02（剛剛即時查詢）
+```
+
+A bare 12-digit number fits five couriers, so on its own it is not sent anywhere:
+
+```text
+單號格式符合多家物流商，尚未送出任何查詢。
+可能的物流商：
+  tcat　黑貓宅急便
+  kerrytj　嘉里大榮
+  ecan　台灣宅配通
+  pchome　網家速配
+  fusheng　富昇物流（momo）
+知道是哪一家：加 --carrier <code> 只送那一家
+同意依序詢問以上全部：加 --auto（單號會被送到其中多家，命中即停）
 ```
 
 `--pending` answers a different question — not "where is this one?" but "how many are still
 coming?":
 
 ```text
-未結案包裹（2 筆）
+未結案包裹（2 筆，本機歷史快照；未連線）
 
-900000000001　黑貓宅急便　配送中　2026/08/06 14:20　（1 天沒更新）
-900000000002　台灣宅配通　已到轉運站　2026/7/20 09:05　（18 天沒更新）
+momo 耳機保護殼　黑貓宅急便　配送中
+單號末四碼：0001
+物流事件：2026/10/16 14:20（1 天沒有新進度）
+上次查詢：2026/10/16 15:03（約 1 天前）
+
+momo 藍牙耳機　台灣宅配通　已到轉運站
+單號末四碼：0002
+物流事件：2026/10/09 09:05（8 天沒有新進度）
+上次查詢：2026/10/09 09:08（約 8 天前，資料可能過期）
+
+需要目前貨態時，請使用 --refresh-pending 或指定其中一筆重新查詢。
 ```
 
-That list comes entirely from the local record and **makes no request**, so it shows what each
-parcel reported the last time you looked it up; `（N 天沒更新）` is how long ago that event was.
+That list comes entirely from the local record and **makes no request**. Each entry carries two
+different times: 物流事件 is when the courier last scanned the parcel, and 上次查詢 is when this tool
+last asked. A snapshot checked more than 7 days ago is marked 資料可能過期 (possibly out of date).
 To find out where a parcel is right now, look its number up again — or refresh all of them at once:
 
 ```text
-未結案包裹更新（2 筆，依最後事件時間新→舊逐一查詢）
+未結案包裹更新完成（2 筆，剛剛即時查詢）
 
-新結案 1　無變化 1
+新結案 1　有新進度 1
 
-── 新結案（1）──
-900000000001　黑貓宅急便　順利送達　2026/08/08 11:02
+── 新結案 ──
+momo 耳機保護殼　黑貓宅急便　順利送達
+單號末四碼：0001
+物流事件：2026/10/17 11:02
+查詢時間：2026/10/17 11:05
 
-── 無變化（1）──
-900000000002　台灣宅配通　已到轉運站　2026/7/20 09:05
+── 有新進度 ──
+momo 藍牙耳機　台灣宅配通　已到轉運站 → 配送中
+單號末四碼：0002
+物流事件：2026/10/17 10:42
+查詢時間：2026/10/17 11:05
 ```
 
 `--refresh-pending` walks the same local list `--pending` reads, but instead of printing the
 stored snapshot it live-queries each number — one at a time, through the same per-carrier path a
 single lookup uses — and sorts the results into a digest: 新結案 (delivered since the last check),
-有新進度 (the latest event changed but the parcel isn't done), 無變化, 已略過, and 查詢失敗. A
-successful refresh overwrites that number's stored snapshot, the same way an ordinary lookup does
-(`--no-record` still suppresses that). One courier failing doesn't stop the rest of the batch —
-each number's own outcome, including its error, is what you see in its row. If a pending entry
-names a courier that needs the [17TRACK bridge](#17track-optional) and no key is configured, it's
-reported as 已略過 with the reason rather than as a failure — and, since it isn't 17TRACK's call to
-make, nothing is sent to them without a key present.
+有新進度 (shown as before → after), 無變化, 已略過, and 查詢失敗 (which says which earlier snapshot is
+still kept). A successful refresh overwrites that number's stored snapshot, the same way an
+ordinary lookup does (`--no-record` still suppresses that). One courier failing doesn't stop the
+rest of the batch; if any parcel fails, the command exits with `6`.
 
-Both commands answer different questions, deliberately: `--pending` is instant and free because it
-never leaves your machine; `--refresh-pending` costs one request per pending parcel and takes
-proportionally longer, because it's asking each courier again.
+To refresh only some parcels: `--match <name>` (several matches are listed and nothing is sent
+unless you add `--all-matches`), `--carrier <code>`, `--limit N` (the N with the most recent
+courier events), and `--dry-run` to see what would be queried without sending or writing anything.
 
-In Claude Code you don't call the script yourself — say *"查一下這個包裹 900000000001"*,
+`--refresh-pending` never calls 17TRACK, even when a key is set: a key in your environment is not
+consent for a whole batch. Entries that would need it are reported as 已略過 with the command to
+query them one at a time.
+
+In Claude Code you don't call the script yourself — say *"查一下這個黑貓包裹 900000000001"*,
 *"還有哪些包裹在路上"*, or *"幫我更新一下未結案包裹"* and the skill handles it.
+
+### Naming parcels
+
+A name is attached to a number when you look it up with `--label`, and only if the courier found
+it (nothing is saved for a not-found result). After that, `--find` looks parcels up by full
+number, exact name, or part of a name, in that order of preference. `--find` and the name commands
+never contact a courier.
+
+```text
+找到 2 個名稱相近的包裹（本機歷史快照；未連線）
+
+1. momo 耳機保護殼　黑貓宅急便　配送中
+單號末四碼：0001
+...
+2. momo 藍牙耳機　台灣宅配通　已到轉運站
+單號末四碼：0002
+...
+這些不是即時貨態。請指定編號或完整名稱；若要全部更新，請明確說「全部更新」。
+```
+
+When more than one parcel matches, all of them are listed and the command exits with `8`: choosing
+between them is the user's call. Labelling a number that already has a name replaces the old one
+and says so. Names may contain letters, digits, punctuation, symbols, emoji, and spaces, up to 100
+characters; control characters, bidirectional-text controls, and other invisible formatting
+characters are rejected, because a name is printed to your terminal and into an agent's context.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success (a not-found result is a success) |
+| 2 | Bad arguments, courier cannot be determined, invalid name |
+| 3 | A dependency is missing (e.g. Playwright for SPX) |
+| 4 | The courier's page structure changed |
+| 5 | Network error, timeout, or server error |
+| 6 | `--refresh-pending` finished, but at least one parcel failed or could not be saved |
+| 7 | `--label`, `--rename`, `--clear-label`, `--forget`, or `--forget-all` could not fully save or delete (including: another process is writing). A plain lookup whose record could not be saved still exits 0 with a note on stderr, because the record is only a convenience |
+| 8 | A choice is needed (which courier, or which of several matching names); **nothing was sent** |
+
+### JSON
+
+`track.py <number> --json` prints the same result object as earlier versions. Every other command
+with `--json`, and every error from those commands, prints one envelope:
+
+```json
+{"schema_version": 1, "operation": "pending", "snapshot": true, "live_query": false, "items": [
+  {"number": "900000000001", "carrier": "tcat", "label": "momo 耳機保護殼",
+   "latest_status": "配送中", "event_time": "2026/10/16 14:20",
+   "event_at": "2026-10-16T14:20:00+08:00", "event_timezone": "+08:00",
+   "checked_at": "2026-10-16T15:03:00+08:00", "checked_age_seconds": 86400,
+   "freshness": "recent", "source_type": "official-http",
+   "past_retention": false, "looks_complete": false}]}
+```
+
+`operation` is one of `history`, `pending`, `find`, `refresh_pending`, `detect` (courier
+selection), `rename`, `clear_label`, `forget`, `forget_all`, or `error`. `freshness` is `fresh`
+(under 24 h), `recent` (under 7 days), `stale`, or `unknown`. `event_at` is filled in only when the
+courier's time zone is known. `refresh_pending` adds `attempted_at`, `counts`, `partial_failure`,
+and per-parcel `outcomes` with `query_succeeded` and `snapshot_saved` reported separately. Errors
+carry `"ok": false` and `exit_code`. For these commands stdout holds exactly one JSON document, and
+progress and messages go to stderr. A single lookup keeps its earlier behavior: its result is one
+JSON object, but its errors (unknown `--carrier`, courier cannot be determined, exit 3/4/5) are
+still printed as plain text, so check the exit code before parsing. JSON always includes full
+numbers, because an agent needs them for the next command.
+
+### Which flags combine
+
+- `--forget`, `--forget-all`, `--history`, `--pending`, `--refresh-pending`, `--endpoints`,
+  `--find`, `--rename`, and `--clear-label` cannot be combined with each other.
+- `--label` needs a tracking number, and cannot be used with `--no-record` or `--via-17track`
+  (neither writes a record to attach the name to).
+- `--auto` cannot be used with `--carrier` or `--via-17track`.
+- `--match`, `--all-matches`, `--limit`, and `--dry-run` only work with `--refresh-pending`;
+  `--all-matches` needs `--match`; with `--refresh-pending`, `--carrier` accepts only the six
+  direct couriers.
+
+Every conflict exits with `2` before anything is sent.
 
 ## Coverage
 
@@ -248,10 +370,17 @@ built from 17TRACK's documented event fields, not a real 全家/7-11 response.
 ## Auto-detection, honestly
 
 T-cat, Kerry TJ, e-can, PChome Express, and Fusheng all issue **12-digit numeric** tracking
-numbers. They are not distinguishable by format. Without `--carrier`, the skill queries them in
-sequence and stops at the first hit — worst case, five requests. SPX numbers start with `TW` and *are* identifiable.
+numbers. They are not distinguishable by format. SPX numbers start with `TW` and *are*
+identifiable.
 
-**If you know the courier, pass `--carrier`.** It's one request instead of five.
+Up to v0.4.0, a bare 12-digit number was tried against all five in turn until one answered. Since
+v0.5.0 it is not sent anywhere unless the courier is known: from `--carrier`, from a format only
+one courier uses, or from the local record of an earlier lookup. Otherwise the CLI lists the
+candidates and exits with `8`. `--auto` restores the old behavior for that one command, when you
+agree to the number being sent to each candidate in turn.
+
+**If you know the courier, pass `--carrier`.** It's one request, to the company that owns the
+number.
 
 ## How it works
 
@@ -278,7 +407,18 @@ shape. The couriers are not similar under the hood:
   instead of being tried against five. Failed lookups are never recorded, `--no-record` skips
   writing, `--history` lists everything, `--pending` narrows that to the parcels still in transit
   (read-only, no request), `--refresh-pending` live-queries that same narrowed list and rewrites
-  each entry's snapshot with what comes back, and `--forget` / `--forget-all` delete it.
+  each entry's snapshot with what comes back, and `--forget` / `--forget-all` delete it. If the
+  file is ever corrupt, the next write keeps it as `history.json.corrupt-<time>` (delete that copy
+  by hand once you no longer need it) and starts a new record.
+- **Names are stored separately, and only if you give them.** `--label` writes
+  `number → name` to `labels.json` in the same folder, with the same `0600` mode. A name can say
+  more about you than the number does ("mum's prescription"), so it is never derived from the
+  courier's page or the order; it is exactly what you typed. `--clear-label` removes one,
+  `--forget` removes the number's name before its record, and `--forget-all` removes both files.
+  Like `history.json`, `labels.json` is included in Time Machine and other backups of `~/.cache`.
+- **Lists show the last four digits.** `--history`, `--pending`, `--find`, and the refresh digest
+  print 單號末四碼 unless you pass `--full-numbers`, so a screenshot of the list doesn't carry
+  full numbers. JSON output always carries them.
 - **`--refresh-pending` never re-broadcasts a number.** Every pending entry already has a known
   courier — that is what got it into the record — so refreshing it sends the number back to that
   one company again, the same disclosure profile as passing `--carrier` explicitly. It does not
@@ -289,12 +429,12 @@ shape. The couriers are not similar under the hood:
   a parcel looks delivered).
 - **No telemetry.** No analytics, no logs, no phoning home. Each query is a live request whose
   result is printed.
-- **Auto-detection sends the number to couriers that don't own it.** T-cat, Kerry TJ, e-can,
-  PChome Express, and Fusheng all issue 12-digit numeric tracking numbers, so a bare number with
-  no `--carrier` is tried against them in turn until one reports a hit — up to five companies
-  see a number that belongs to one of them. Each request is the same one your browser would make
-  on their public form, and none of them learns who you are, but the number itself is disclosed
-  more widely than you might assume. **Passing `--carrier` sends it to exactly one company.** The CLI names the couriers it is about to query before the first request goes out, so this is visible at the point of use, not just here.
+- **A number is only sent to a courier that is known to own it, unless you say otherwise.** Five
+  couriers share the 12-digit format, so a bare number fits all of them. Without `--carrier`, a
+  unique format, or a local record, nothing is sent; the CLI lists the candidates instead.
+  `--auto` is your explicit agreement to try them in turn, which means up to five companies see a
+  number that belongs to one of them. Each request is the same one your browser would make on
+  their public form, and none of them learns who you are.
 - In Claude Code, the returned timeline enters your own Claude session like any other command
   output.
 - **A tracking number is not anonymous.** On most of these sites it identifies a parcel, and
@@ -401,17 +541,26 @@ intercept, so calibrating it still means opening browser devtools by hand.
 
 ## Status
 
-v0.4.0 ([CHANGELOG](./CHANGELOG.md)) — 199 offline unit tests. Verification status differs per
+v0.5.0 ([CHANGELOG](./CHANGELOG.md)) — 369 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
-| Courier | not-found path | found path |
-|---|---|---|
-| 黑貓 T-cat | verified against live response | **verified** — real parcel, 2026-08-02 |
-| 嘉里大榮 Kerry TJ | verified against live response | synthetic fixture (real field names, values unverified) |
-| 台灣宅配通 e-can | verified against live response | synthetic fixture (real headers, row values unverified) |
-| 網家速配 PChome | verified against live response | synthetic fixture (real class structure, values unverified) |
-| 富昇物流 Fusheng | verified against live response | **verified** — real parcel, 4-event history, 2026-08-02 |
-| 蝦皮 SPX | — | DOM selectors from a live page snapshot; not yet run against a real parcel |
+| Courier | Method | not-found path | found path | Last verified |
+|---|---|---|---|---|
+| 黑貓 T-cat | official page, HTTP | verified against live response | **verified** — real parcel, 2026-08-02 | 2026-08 |
+| 嘉里大榮 Kerry TJ | official API, HTTP | verified against live response | synthetic fixture (real field names, values unverified) | 2026-08 |
+| 台灣宅配通 e-can | official page, HTTP | verified against live response | synthetic fixture (real headers, row values unverified) | 2026-08 |
+| 網家速配 PChome | official page, HTTP | verified against live response | synthetic fixture (real class structure, values unverified) | 2026-08 |
+| 富昇物流 Fusheng | official page, HTTP | verified against live response | **verified** — real parcel, 4-event history, 2026-08-02 | 2026-08 |
+| 蝦皮 SPX | official page, Playwright | — | DOM selectors from a live page snapshot; not yet run against a real parcel | 2026-08 |
+| 中華郵政／全家／7-ELEVEN／新竹 | 17TRACK (optional) | official pages have a CAPTCHA | 17TRACK documented schema only | 2026-08 |
+
+"Last verified" is when the maintainer last confirmed the adapter or the courier's page flow, not
+the time of any parcel's status. This is an unofficial personal tool with no affiliation with any
+courier; their sites can change at any time.
+
+New couriers are added with `auto_detect_allowed: False` in `scripts/carriers/__init__.py`
+(`CARRIER_META`) until a real found-path response has been captured, so a bare number is never
+sent to an adapter that has not been verified.
 
 Verified on macOS 26.5.1 (Apple M4 Pro) / Python 3.12.13. Found-path parsing for the three
 couriers above marked *synthetic* will be re-calibrated as real tracking numbers become

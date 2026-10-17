@@ -12,21 +12,22 @@
 Time Machine 只自動排除 `~/Library/Caches`，**不會**排除 `~/.cache`——這個檔案會
 進備份。README 有據實說明；不想留痕就用 --no-record 或查完 --forget。
 
-紀錄毀損時一律降級為「無紀錄」繼續查詢，絕不讓它擋住主功能——「毀損」包含整檔
-JSON 壞掉與單筆 entry 型別錯兩種。
+紀錄毀損時讀取一律降級為「無紀錄」繼續查詢，絕不讓它擋住主功能——「毀損」包含
+整檔 JSON 壞掉與單筆 entry 型別錯兩種。寫入時遇到整檔毀損，先把原檔另存為
+`history.json.corrupt-<時間>` 再重新記錄：直接覆寫等於靜默刪光紀錄，拒絕寫入則讓
+紀錄功能永久停擺。
 
-並行限制：讀-改-寫沒有檔案鎖，兩個同時執行的查詢可能後寫覆蓋先寫。對「個人低頻
-查詢」的定位可接受；若要並行大量查詢，這裡需要加鎖。
+並行：寫入一律經 storage.mutation_lock（OS 檔案鎖），取不到立即失敗；讀取不取鎖。
 """
 from __future__ import annotations
 
 import json
 import os
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import storage
 from carriers.base import TrackResult, parse_event_time
 
 HOME_ENV = "PARCEL_KAU_A_HOME"
@@ -84,6 +85,11 @@ def lookup(number: str) -> str | None:
     return entry.get("carrier") if isinstance(entry, dict) else None
 
 
+def _text(value) -> str:
+    """手動編輯過的紀錄可能放了任何型別；不是字串就當空字串，不讓排序或解析崩潰。"""
+    return value if isinstance(value, str) else ""
+
+
 def looks_complete(status: str) -> bool:
     text = status or ""
     if any(w in text for w in _NOT_YET):
@@ -100,7 +106,7 @@ def days_since_last_event(entry: dict, *, now: datetime | None = None) -> int | 
     比較全程用 naive 本地時間——各站時間都是台灣時間且不帶時區，
     parse_event_time() 也刻意回 naive，混入 aware 只會 TypeError。
     """
-    parsed = parse_event_time(entry.get("last_event_time") or "")
+    parsed = parse_event_time(_text(entry.get("last_event_time")))
     if parsed is None:
         return None
     # 站方時鐘比本機快（或本機時鐘慢）時 delta 會是負的，天數不該出現負值
@@ -109,7 +115,7 @@ def days_since_last_event(entry: dict, *, now: datetime | None = None) -> int | 
 
 def _event_sort_key(entry: dict) -> tuple[int, object]:
     """比照 TrackEvent.sort_key：可解析的時間優先且互相比較，其餘退到後面按字串排。"""
-    raw = entry.get("last_event_time") or ""
+    raw = _text(entry.get("last_event_time"))
     parsed = parse_event_time(raw)
     return (1, parsed) if parsed else (0, raw)
 
@@ -130,21 +136,19 @@ def pending(data: dict[str, dict] | None = None) -> list[tuple[str, dict]]:
 
 
 def _write(data: dict[str, dict]) -> None:
-    """原子寫入 + 600 權限：中斷不會留半截 JSON，暫存檔與正式檔同目錄才能 rename。"""
-    d = home()
-    d.mkdir(parents=True, exist_ok=True)
-    # mkstemp 建檔即為 0600，權限在任何內容寫入之前就到位（無競態窗口）。
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=".history-", suffix=".tmp")
+    """原子寫入 + 600 權限：中斷不會留半截 JSON。呼叫端必須持有 mutation_lock。"""
+    storage.atomic_write_json(home(), path(), data, prefix=".history-")
+
+
+def _entries_for_write() -> dict[str, dict]:
+    """寫入前讀檔。整檔毀損時另存保留後從空白開始，不降級後直接覆寫。"""
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path())
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+        data = storage.read_json_object(path()) or {}
+    except storage.Corrupt:
+        kept = storage.quarantine(path())
+        print(f"（查詢紀錄檔無法解析，已另存為 {kept}，重新開始記錄）", file=sys.stderr)
+        data = {}
+    return {k: v for k, v in data.items() if isinstance(v, dict)}
 
 
 def record(result: TrackResult) -> bool:
@@ -152,29 +156,35 @@ def record(result: TrackResult) -> bool:
     if not result.found:
         return False
     latest = result.latest
-    data = entries()
-    existing = data.get(result.number) or {}
-    now = _now()
-    data[result.number] = {
-        "carrier": result.carrier,
-        "last_status": latest.status if latest else "",
-        "last_event_time": latest.time if latest else "",
-        "first_seen": existing.get("first_seen") or now,
-        "last_checked": now,
-        "looks_complete": looks_complete(latest.status if latest else ""),
-    }
-    _write(data)
+    with storage.mutation_lock(home()):
+        data = _entries_for_write()
+        existing = data.get(result.number) or {}
+        now = _now()
+        data[result.number] = {
+            "carrier": result.carrier,
+            "last_status": latest.status if latest else "",
+            "last_event_time": latest.time if latest else "",
+            "first_seen": existing.get("first_seen") or now,
+            "last_checked": now,
+            "looks_complete": looks_complete(latest.status if latest else ""),
+        }
+        _write(data)
     return True
 
 
 def forget(number: str) -> bool:
-    data = entries()
-    if number not in data:
-        return False
-    del data[number]
-    _write(data)
-    return True
+    """刪除一筆。檔案毀損時 raise storage.Corrupt 且不動原檔：使用者要的是刪掉這個單號，
+    把含有它的檔案改名搬到旁邊再回報「已刪除」，等於說一套做一套。"""
+    with storage.mutation_lock(home()):
+        raw = storage.read_json_object(path()) or {}
+        data = {k: v for k, v in raw.items() if isinstance(v, dict)}
+        if number not in data:
+            return False
+        del data[number]
+        _write(data)
+        return True
 
 
 def forget_all() -> None:
-    _write({})
+    with storage.mutation_lock(home()):
+        _write({})
