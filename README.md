@@ -55,11 +55,11 @@ repeat per parcel                     --json to pipe onward
 
 ```bash
 # Claude Code (user-level)
-cp -r parcel-kau-a ~/.claude/skills/parcel-kau-a
+git clone https://github.com/AugustusW/parcel-kau-a.git ~/.claude/skills/parcel-kau-a
 pip install -r ~/.claude/skills/parcel-kau-a/requirements.txt
 
 # Codex — same folder, different home (open SKILL.md standard, no changes needed)
-cp -r parcel-kau-a ~/.codex/skills/parcel-kau-a
+git clone https://github.com/AugustusW/parcel-kau-a.git ~/.codex/skills/parcel-kau-a
 
 # optional — only needed for 蝦皮店到店 (SPX)
 pip install playwright && playwright install chromium
@@ -419,9 +419,10 @@ available; until then those code paths carry `UNVERIFIED` comments.
 
 ## Roadmap
 
-17TRACK integration is the obvious next step — it is the only aggregator covering all eight of the
-Taiwanese couriers surveyed, including the four blocked by CAPTCHA here. It requires an API key and,
-past the free tier, payment, so it is deliberately not part of v0.1.0.
+The 17TRACK bridge has shipped as an opt-in (see [17TRACK (optional)](#17track-optional)); it stays
+off unless you supply your own key. What remains is re-calibrating the found-path parsers for
+Kerry TJ, e-can and PChome Express against real tracking numbers (see [Status](#status)).
+That is waiting on real numbers, not on code.
 
 ## License
 

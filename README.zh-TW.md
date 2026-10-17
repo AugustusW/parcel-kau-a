@@ -45,11 +45,11 @@
 
 ```bash
 # Claude Code（使用者層級）
-cp -r parcel-kau-a ~/.claude/skills/parcel-kau-a
+git clone https://github.com/AugustusW/parcel-kau-a.git ~/.claude/skills/parcel-kau-a
 pip install -r ~/.claude/skills/parcel-kau-a/requirements.txt
 
 # Codex——同一份資料夾，換個位置放（開放 SKILL.md 標準，不需修改）
-cp -r parcel-kau-a ~/.codex/skills/parcel-kau-a
+git clone https://github.com/AugustusW/parcel-kau-a.git ~/.codex/skills/parcel-kau-a
 
 # 選配——只有蝦皮店到店需要
 pip install playwright && playwright install chromium
