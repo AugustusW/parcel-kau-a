@@ -82,10 +82,12 @@ def _stall_days(entry: dict) -> int | None:
 
 
 def _checked_line(v: dict) -> str:
+    if v["checked_problem"] == "unparseable":
+        return f"上次查詢：{v['checked_at'] or '?'}（時間格式無法判讀）"
     if v["checked_at"] is None:
         return "上次查詢：時間未知"
-    if v["freshness"] == "unknown":
-        return f"上次查詢：{v['checked_at']}（本機時間異常，無法計算經過時間）"
+    if v["checked_problem"] == "future":
+        return f"上次查詢：{v['checked_at']}（晚於現在，本機時間異常，無法計算經過時間）"
     tail = "，資料可能過期" if v["freshness"] == "stale" else ""
     return (f"上次查詢：{_local_minutes(v['checked_at'])}"
             f"（{snapshot.relative(v['checked_age_seconds'])}{tail}）")
@@ -95,6 +97,9 @@ def _render_snapshot_item(v: dict, *, full: bool, stall_days: int | None,
                           complete_mark: bool = False) -> list[str]:
     code = v["carrier"]
     name = CARRIERS[code].name if code in CARRIERS else (code or "?")
+    if v["record_missing"]:
+        return [v["label"] or "?", _display_number(v["number"], full),
+                "（只剩名稱，查詢紀錄已不存在；可用 --clear-label 清除這個名稱）"]
     head = "　".join(x for x in (v["label"], name, v["latest_status"]) if x)
     if complete_mark and v["looks_complete"]:
         head += "　✓可刪（看似已完成）"
@@ -106,13 +111,17 @@ def _render_snapshot_item(v: dict, *, full: bool, stall_days: int | None,
         event = "物流事件：未知"
     lines = [head, _display_number(v["number"], full), event, _checked_line(v)]
     if v["past_retention"]:
-        lines.append("物流事件已超過物流商查詢保留期，可用 --forget 刪除這筆紀錄")
+        who = v["number"] if full else f"末四碼 {v['number'][-4:]}"
+        how = "" if full else "；加 --full-numbers 可看完整單號"
+        lines.append(f"物流事件已超過物流商查詢保留期（{who}），可用 --forget <單號> 刪除這筆紀錄{how}")
     return lines
 
 
-def _views(rows: list[tuple[str, dict]], names: dict[str, str]) -> list[dict]:
+def _views(rows: list[tuple[str, dict]], names: dict[str, str],
+           missing: frozenset = frozenset()) -> list[dict]:
     now = snapshot.now()
-    return [snapshot.view(n, e, label=names.get(n), now=now) for n, e in rows]
+    return [snapshot.view(n, e, label=names.get(n), now=now, record_missing=n in missing)
+            for n, e in rows]
 
 
 def _emit_envelope(operation: str, **fields) -> None:
@@ -204,9 +213,11 @@ def _run_find(args) -> int:
     """只讀本機。找到多筆時列出全部並以 exit 8 結束——由使用者選，絕不替他挑一筆。"""
     data = history.entries()
     names = labels.load_for_read()
-    hits = labels.find(args.find, data.keys(), names)
-    rows = [(n, data[n]) for n in hits]
-    views = _views(rows, names)
+    # 只剩名稱的單號（紀錄檔曾毀損被另存）也要找得到，否則那些名稱就再也看不到了
+    orphans = frozenset(n for n in names if n not in data)
+    hits = labels.find(args.find, [*data.keys(), *sorted(orphans)], names)
+    rows = [(n, data.get(n, {})) for n in hits]
+    views = _views(rows, names, orphans)
     need_pick = len(views) > 1
     code = EXIT_SELECTION_REQUIRED if need_pick else 0
     if args.as_json:
@@ -298,12 +309,15 @@ def _run_snapshot_listing(args) -> int:
     else:
         rows = sorted(data.items(), key=lambda kv: str(kv[1].get("last_checked", "")),
                       reverse=True)
-    views = _views(rows, labels.load_for_read())
+    names = labels.load_for_read()
+    views = _views(rows, names)
+    orphan_count = sum(1 for n in names if n not in data)
     op = "pending" if args.show_pending else "history"
     if args.as_json:
         if not data:
             print("查詢紀錄是空的", file=sys.stderr)
-        _emit_envelope(op, snapshot=True, live_query=False, items=views)
+        _emit_envelope(op, snapshot=True, live_query=False, items=views,
+                       orphan_labels=orphan_count)
         return 0
     if not data:
         print("查詢紀錄是空的")
@@ -323,6 +337,9 @@ def _run_snapshot_listing(args) -> int:
                                               complete_mark=args.show_history)))
     if args.show_pending:
         print("\n需要目前貨態時，請使用 --refresh-pending 或指定其中一筆重新查詢。")
+    if args.show_history and orphan_count:
+        print(f"\n另有 {orphan_count} 個名稱沒有對應的查詢紀錄（可能是紀錄檔曾毀損）："
+              f"--find 找得到它們，可用 --clear-label <單號> 逐一清除，或 --forget-all 全部清除")
     return 0
 
 

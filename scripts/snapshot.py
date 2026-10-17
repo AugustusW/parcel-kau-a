@@ -39,6 +39,16 @@ def _parse_aware(text) -> datetime | None:
     return dt if dt.tzinfo is not None else None
 
 
+def checked_problem(checked_at, *, now: datetime) -> str | None:
+    """unknown 的兩種成因要分開講：時間字串看不懂（unparseable）與本機時鐘倒退（future）。"""
+    if _str(checked_at) is None:
+        return "unparseable" if checked_at not in (None, "") else None
+    checked = _parse_aware(checked_at)
+    if checked is None:
+        return "unparseable"
+    return "future" if checked > now else None
+
+
 def freshness(checked_at, *, now: datetime) -> tuple[str, int | None]:
     """回 (fresh|recent|stale|unknown, 經過秒數)。時鐘倒退（checked_at 在未來）視為 unknown。"""
     checked = _parse_aware(checked_at)
@@ -71,7 +81,8 @@ def _tz(offset: str) -> timezone:
     return timezone(sign * timedelta(hours=int(hours), minutes=int(minutes)))
 
 
-def view(number: str, entry: dict, *, label: str | None, now: datetime) -> dict:
+def view(number: str, entry: dict, *, label: str | None, now: datetime,
+         record_missing: bool = False) -> dict:
     """把 history 的一筆紀錄組成對外欄位（spec §4.5、§5.5）。不改動 history 的內部欄位名。"""
     code = _str(entry.get("carrier"))
     meta = carriers.CARRIER_META.get(code or "", {})
@@ -96,7 +107,10 @@ def view(number: str, entry: dict, *, label: str | None, now: datetime) -> dict:
         "checked_at": checked_at,
         "checked_age_seconds": age,
         "freshness": fresh,
+        "checked_problem": checked_problem(entry.get("last_checked"), now=now),
         "source_type": meta.get("source_type"),
         "past_retention": past_retention,
         "looks_complete": entry.get("looks_complete") is True,
+        # 名稱還在 labels.json、查詢紀錄卻已不在（例如紀錄檔曾毀損被另存）
+        "record_missing": record_missing,
     }

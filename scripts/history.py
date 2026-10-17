@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import storage
@@ -109,8 +109,12 @@ def days_since_last_event(entry: dict, *, now: datetime | None = None) -> int | 
     parsed = parse_event_time(_text(entry.get("last_event_time")))
     if parsed is None:
         return None
-    # 站方時鐘比本機快（或本機時鐘慢）時 delta 會是負的，天數不該出現負值
-    return max(0, ((now or datetime.now()) - parsed).days)
+    delta = (now or datetime.now()) - parsed
+    # 站方時鐘比本機快幾分鐘到幾小時很常見，算「今天」；晚超過一天就不是時鐘誤差，
+    # 說「今天有新進度」會誤導，不如不說。
+    if delta < -timedelta(days=1):
+        return None
+    return max(0, delta.days)
 
 
 def _event_sort_key(entry: dict) -> tuple[int, object]:

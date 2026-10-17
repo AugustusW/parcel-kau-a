@@ -66,6 +66,15 @@ def normalize(text: str) -> str:
 
 
 def _read_strict() -> dict[str, str]:
+    """寫入前讀檔：任何一個值不是字串都視為毀損——寫回時丟掉它等於替使用者改檔。"""
+    data = storage.read_json_object(path()) or {}
+    bad = [k for k, v in data.items() if not isinstance(v, str)]
+    if bad:
+        raise storage.Corrupt(path(), f"{len(bad)} 個名稱不是文字（單號 {', '.join(bad[:3])}）")
+    return data
+
+
+def _read_lenient() -> dict[str, str]:
     data = storage.read_json_object(path()) or {}
     return {k: v for k, v in data.items() if isinstance(v, str)}
 
@@ -78,7 +87,7 @@ def check_writable() -> None:
 def load_for_read() -> dict[str, str]:
     """不存在回空；毀損時警告並回空，不改動檔案。"""
     try:
-        return _read_strict()
+        return _read_lenient()
     except storage.Corrupt as e:
         print(f"（名稱檔 {e}；本次不顯示名稱。修正或改名該檔後即可恢復，"
               f"--forget-all 會刪除它）", file=sys.stderr)
@@ -117,7 +126,10 @@ def remove_all() -> bool:
 
 
 def find(query: str, numbers: Iterable[str], names: dict[str, str]) -> list[str]:
-    """依序比對：完整單號 → 名稱完全相符 → 名稱包含；回傳第一個有命中的層級的全部結果。
+    """依序比對：完整單號 → 單號尾碼 → 名稱完全相符 → 名稱包含；回傳第一個有命中的層級的全部結果。
+
+    尾碼讓列表上看到的「末四碼」可以直接拿來找；至少 4 碼才算，避免「01」這種
+    短字串同時命中一大片。
 
     不做模糊比對（spec §4.3 首版範圍），也絕不替使用者從多筆裡挑一筆。
     """
@@ -129,6 +141,10 @@ def find(query: str, numbers: Iterable[str], names: dict[str, str]) -> list[str]
     exact_number = [n for n in nums if n == raw]
     if exact_number:
         return exact_number
+    if len(raw) >= 4 and raw.isalnum():
+        suffix = [n for n in nums if n.endswith(raw)]
+        if suffix:
+            return suffix
     exact = [n for n in nums if n in names and normalize(names[n]) == q]
     if exact:
         return exact

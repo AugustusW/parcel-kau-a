@@ -3,6 +3,34 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.5.1] - 2026-10-18
+
+Follow-ups from the v0.5.0 review that were deferred at release.
+
+### Changed
+- **`--find` accepts the end of a number** (at least 4 characters), so the 末四碼 shown in lists can
+  be used directly. Order of preference: full number, end of number, exact name, part of a name.
+  Several matches are still listed with exit 8.
+- **The retention hint names the parcel** (末四碼) and says how to see its full number.
+- **A courier event more than a day in the future no longer shows as 今天有新進度**; within a day
+  is still treated as today, since courier clocks running a few minutes ahead are common.
+- **An unreadable last-check time is reported as 時間格式無法判讀**, no longer as a clock problem.
+  JSON adds `checked_problem` (`unparseable` / `future` / `null`).
+- **Names whose record is gone** (for example after a corrupt `history.json` was set aside) are found
+  by `--find` and marked 只剩名稱; `--history` counts them at the end. JSON adds `record_missing`
+  per item and `orphan_labels` on `history` / `pending`.
+- **`labels.json` with a non-text value is no longer silently cleaned on the next write**: writes
+  are refused with exit 7 and the file is left as it is, the same as any other unreadable name file.
+
+### Fixed
+- Two corruptions of `history.json` within the same second no longer overwrite the first kept copy.
+- Writes now fsync the directory after the rename (POSIX), so a power loss cannot drop the rename.
+- On Windows, a file held open by another program (antivirus, indexing) is retried for about 1.5
+  seconds instead of 0.2 before the write is reported as failed.
+
+### Notes
+- 394 offline unit tests.
+
 ## [0.5.0] - 2026-10-17
 
 Three things a user could get wrong are now hard to get wrong: reading a days-old snapshot as the

@@ -23,6 +23,10 @@ from datetime import datetime
 from pathlib import Path
 
 LOCK_NAME = ".mutation.lock"
+_IS_WINDOWS = os.name == "nt"
+# Windows 上目標檔被防毒、索引或另一個讀取中的程序開著時，os.replace 會 PermissionError；
+# 讀取端不取鎖，所以退讓一下再試。總共約 1.5 秒，超過就放棄並交給呼叫端降級處理。
+_REPLACE_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
 _depth = 0
 _handle = None
 
@@ -112,25 +116,44 @@ def read_json_object(p: Path) -> dict | None:
     return data
 
 
+def _quarantine_stamp() -> str:
+    return f"{datetime.now():%Y%m%dT%H%M%S}"
+
+
 def quarantine(p: Path) -> Path:
-    """把毀損檔改名保留在同目錄，回傳新路徑。原內容一個位元組都不動。"""
-    kept = p.with_name(f"{p.name}.corrupt-{datetime.now():%Y%m%dT%H%M%S}")
+    """把毀損檔改名保留在同目錄，回傳新路徑。原內容一個位元組都不動。
+
+    同一秒內毀損兩次時加序號，不覆蓋先前的隔離檔。呼叫端持有 mutation_lock，
+    所以「檢查不存在 → 改名」之間不會有別的程序插入。
+    """
+    base = f"{p.name}.corrupt-{_quarantine_stamp()}"
+    kept, n = p.with_name(base), 2
+    while kept.exists():
+        kept, n = p.with_name(f"{base}-{n}"), n + 1
     os.replace(p, kept)
     return kept
 
 
 def _replace(src: str, dst: Path) -> None:
-    # Windows 上目標檔正被別的程序開著讀取時 os.replace 會 PermissionError；
-    # 讀取端不取鎖，所以給一點時間讓對方讀完。POSIX 的 rename 不受影響。
-    attempts = 3 if os.name == "nt" else 1
-    for i in range(attempts):
+    delays = _REPLACE_DELAYS if _IS_WINDOWS else ()
+    for delay in delays:
         try:
             os.replace(src, dst)
             return
         except PermissionError:
-            if i == attempts - 1:
-                raise
-            time.sleep(0.1)
+            time.sleep(delay)
+    os.replace(src, dst)
+
+
+def _fsync_dir(d: Path) -> None:
+    """rename 之後 fsync 目錄，斷電時這次改名才不會遺失。Windows 不支援對目錄 fsync。"""
+    if _IS_WINDOWS:
+        return
+    fd = os.open(d, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def atomic_write_json(home: Path, final: Path, data, *, prefix: str) -> None:
@@ -143,6 +166,7 @@ def atomic_write_json(home: Path, final: Path, data, *, prefix: str) -> None:
             f.flush()
             os.fsync(f.fileno())
         _replace(tmp, final)
+        _fsync_dir(home)
     except BaseException:
         try:
             os.unlink(tmp)

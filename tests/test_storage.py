@@ -135,3 +135,59 @@ def test_atomic_write_creates_owner_only_file(tmp_path):
     storage.atomic_write_json(tmp_path, target, {"a": 1}, prefix=".x-")
     assert oct(target.stat().st_mode & 0o777) == "0o600"
     assert [p.name for p in tmp_path.iterdir()] == ["x.json"]
+
+
+def test_quarantine_never_overwrites_an_earlier_copy(tmp_path, monkeypatch):
+    """同一秒內毀損兩次：第二份不可蓋掉第一份。"""
+    bad = tmp_path / "history.json"
+    bad.write_text("first", encoding="utf-8")
+    first = storage.quarantine(bad)
+    bad.write_text("second", encoding="utf-8")
+    monkeypatch.setattr(storage, "_quarantine_stamp", lambda: first.name.split(".corrupt-")[1])
+    second = storage.quarantine(bad)
+    assert first != second
+    assert first.read_text(encoding="utf-8") == "first"
+    assert second.read_text(encoding="utf-8") == "second"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="目錄 fsync 只在 POSIX 有意義")
+def test_atomic_write_fsyncs_the_directory(tmp_path, monkeypatch):
+    import stat
+    synced_dirs = []
+    real = os.fsync
+
+    def spy(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            synced_dirs.append(fd)
+        return real(fd)
+
+    monkeypatch.setattr(storage.os, "fsync", spy)
+    storage.atomic_write_json(tmp_path, tmp_path / "x.json", {"a": 1}, prefix=".x-")
+    assert synced_dirs, "rename 之後要 fsync 目錄，斷電才不會遺失這次改名"
+
+
+def test_windows_replace_retries_for_about_a_second_and_a_half(tmp_path, monkeypatch):
+    calls, slept = [], []
+
+    def flaky(src, dst):
+        calls.append(1)
+        if len(calls) < 5:
+            raise PermissionError("in use")
+
+    monkeypatch.setattr(storage, "_IS_WINDOWS", True)
+    monkeypatch.setattr(storage.os, "replace", flaky)
+    monkeypatch.setattr(storage.time, "sleep", slept.append)
+    storage._replace("a", tmp_path / "b")
+    assert len(calls) == 5
+    assert 1.0 <= sum(storage._REPLACE_DELAYS) <= 2.0
+
+
+def test_windows_replace_gives_up_after_the_last_delay(tmp_path, monkeypatch):
+    def always(src, dst):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(storage, "_IS_WINDOWS", True)
+    monkeypatch.setattr(storage.os, "replace", always)
+    monkeypatch.setattr(storage.time, "sleep", lambda s: None)
+    with pytest.raises(PermissionError):
+        storage._replace("a", tmp_path / "b")

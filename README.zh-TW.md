@@ -168,7 +168,7 @@ momo 藍牙耳機　台灣宅配通　已到轉運站 → 配送中
 
 ### 替包裹取名稱
 
-用 `--label` 查詢時，查到結果才會把名稱掛到那個單號上（查無資料不存）。之後 `--find` 依「完整單號 → 名稱完全相符 → 名稱包含」的順序找包裹。`--find` 與名稱相關指令都不會連線。
+用 `--label` 查詢時，查到結果才會把名稱掛到那個單號上（查無資料不存）。之後 `--find` 依「完整單號 → 單號尾碼（至少 4 碼，列表上的末四碼可以直接用）→ 名稱完全相符 → 名稱包含」的順序找包裹。`--find` 與名稱相關指令都不會連線。紀錄已不存在、只剩名稱的單號（例如紀錄檔毀損被另存後）仍找得到，會標「只剩名稱」，`--history` 最後也會列出這類名稱的數量。
 
 多筆相符時全部列出並以 `8` 結束，由使用者決定要哪一筆。對已有名稱的單號再 `--label` 會取代舊名稱並說明。名稱可用文字、數字、標點、符號、emoji 與空白，最多 100 字；控制字元、雙向文字控制字元與其他看不見的格式字元一律拒絕，因為名稱會印到你的終端機、也會進到 Agent 的 context。
 
@@ -200,16 +200,20 @@ momo 藍牙耳機　台灣宅配通　已到轉運站 → 配送中
 
 ## 支援範圍
 
-| 貨運 | `--carrier` | 方式 | 資料保留 |
-|---|---|---|---|
-| 黑貓宅急便 | `tcat` | HTTP（ASP.NET postback → 詳細頁） | 3 個月 |
-| 嘉里大榮 | `kerrytj` | HTTP JSON API | — |
-| 台灣宅配通 | `ecan` | HTTP（Big5 編碼的經典 ASP） | 2 個月 |
-| 網家速配 | `pchome` | HTTP（SSR 頁面，單號放在 URL path） | — |
-| 富昇物流（momo） | `fusheng` | HTTP（SSR 頁面，單號放在 query string） | — |
-| 蝦皮店到店 | `spx` | Playwright（headless） | — |
+| 貨運 | `--carrier` | 官方查件頁 | 本工具的讀取方式 | 資料保留 |
+|---|---|---|---|---|
+| 黑貓宅急便 | `tcat` | [t-cat.com.tw](https://www.t-cat.com.tw/Inquire/Trace.aspx) | HTTP（ASP.NET postback → 詳細頁） | 3 個月 |
+| 嘉里大榮 | `kerrytj` | [kerrytj.com](https://www.kerrytj.com/zh/checking) | HTTP JSON API | — |
+| 台灣宅配通 | `ecan` | [query2.e-can.com.tw](https://query2.e-can.com.tw/%E5%A4%9A%E7%AD%86%E6%9F%A5%E4%BB%B6A.htm) | HTTP（Big5 編碼的經典 ASP） | 2 個月 |
+| 網家速配 | `pchome` | [gopchome.com.tw](https://www.gopchome.com.tw/) | HTTP（SSR 頁面，單號放在 URL path） | — |
+| 富昇物流（momo） | `fusheng` | [tmsvendor.fs.com.tw](https://tmsvendor.fs.com.tw/search) | HTTP（SSR 頁面，單號放在 query string） | — |
+| 蝦皮店到店 | `spx` | [spx.tw](https://spx.tw/) | Playwright（headless） | — |
+| 中華郵政 | `chunghwa-post` | [postserv.post.gov.tw](https://postserv.post.gov.tw/pstmail/main_mail.html) | 官方頁面有驗證碼，只能走 [17TRACK](#17track選配) | — |
+| 全家店到店 | `famiport` | [fmec.famiport.com.tw](https://fmec.famiport.com.tw/FP_Entrance/QueryBox) | 官方頁面有驗證碼，只能走 [17TRACK](#17track選配) | — |
+| 7-ELEVEN 交貨便 | `seven-eleven` | [eservice.7-11.com.tw](https://eservice.7-11.com.tw/e-tracking/search.aspx) | 官方頁面有驗證碼，只能走 [17TRACK](#17track選配) | — |
+| 新竹物流 | `hct` | [cagweb01.hct.com.tw](https://cagweb01.hct.com.tw/search/searchgoods.aspx) | 官方頁面有驗證碼，只能走 [17TRACK](#17track選配) | — |
 
-**無法直連與原因**：中華郵政、全家店到店、7-ELEVEN 交貨便、新竹物流的查詢表單都有圖形驗證碼。本 skill 不做驗證碼破解。這四家可透過下方的[17TRACK 選配橋接](#17track選配)查詢。
+前六家直接讀官方公開頁面。本 skill 不做驗證碼破解，後四家只能透過下方的 [17TRACK 選配橋接](#17track選配)、用你自己的 API key 查詢，它們的 `--carrier` 代號也只能搭配 `--via-17track` 使用。網址於 2026-10 確認過。
 
 ## 17TRACK（選配）
 
@@ -353,7 +357,7 @@ python3 scripts/capture_fixture.py <真實單號> --carrier famiport --via-17tra
 
 ## 狀態
 
-v0.5.0（[CHANGELOG](./CHANGELOG.md)）——369 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
+v0.5.1（[CHANGELOG](./CHANGELOG.md)）——394 個離線單元測試。**各家的驗證程度不同，值得精確說明**：
 
 | 貨運 | 查詢方式 | 查無資料路徑 | 有資料路徑 | 最後驗證 |
 |---|---|---|---|---|

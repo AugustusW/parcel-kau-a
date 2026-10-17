@@ -261,10 +261,16 @@ def test_days_since_last_event_is_none_when_it_cannot_be_known(entry):
     assert history.days_since_last_event(entry, now=datetime(2026, 8, 7)) is None
 
 
-def test_days_since_last_event_clamps_future_times_to_zero():
-    """站方時間比本機時鐘快（或使用者時鐘慢）時不該出現負天數。"""
+def test_days_since_last_event_treats_slightly_future_times_as_today():
+    """站方時鐘比本機快幾分鐘到幾小時很常見：算今天，不出現負天數。"""
+    assert history.days_since_last_event({"last_event_time": "2026/08/07 18:00"},
+                                         now=datetime(2026, 8, 7, 10, 0)) == 0
+
+
+def test_days_since_last_event_is_unknown_for_events_far_in_the_future():
+    """晚超過一天就不是時鐘誤差了，顯示「今天有新進度」會誤導（v0.5.0 曾一律算 0）。"""
     assert history.days_since_last_event({"last_event_time": "2026/08/09 10:00"},
-                                         now=datetime(2026, 8, 7)) == 0
+                                         now=datetime(2026, 8, 7)) is None
 
 
 def test_corrupt_file_is_quarantined_not_overwritten(home, capsys):

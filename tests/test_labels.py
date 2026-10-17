@@ -95,3 +95,31 @@ def test_non_string_values_are_ignored_on_read():
     labels.path().parent.mkdir(parents=True, exist_ok=True)
     labels.path().write_text('{"1": "ok", "2": 5, "3": null}', encoding="utf-8")
     assert labels.load_for_read() == {"1": "ok"}
+
+
+def test_find_matches_a_number_suffix_after_exact_number_and_before_names():
+    names = {"900000000001": "書", "900000000002": "0001 號包裹"}
+    nums = ["900000000001", "900000000002"]
+    assert labels.find("0001", nums, names) == ["900000000001"], "尾碼優先於名稱"
+    assert labels.find("900000000001", nums, names) == ["900000000001"]
+
+
+def test_find_suffix_can_match_several_numbers():
+    nums = ["900000000001", "800000000001"]
+    assert labels.find("0001", nums, {}) == nums
+
+
+def test_short_queries_are_not_treated_as_suffixes():
+    assert labels.find("01", ["900000000001"], {}) == []
+
+
+def test_non_string_values_block_writes_instead_of_being_dropped():
+    labels.path().parent.mkdir(parents=True, exist_ok=True)
+    labels.path().write_text('{"1": "ok", "2": 5}', encoding="utf-8")
+    before = labels.path().read_bytes()
+    with pytest.raises(storage.Corrupt):
+        labels.set_label("3", "x")
+    with pytest.raises(storage.Corrupt):
+        labels.remove("1")
+    assert labels.path().read_bytes() == before
+    assert labels.load_for_read() == {"1": "ok"}
