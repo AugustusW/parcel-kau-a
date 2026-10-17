@@ -3,6 +3,69 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.5.0] - 2026-10-17
+
+Three things a user could get wrong are now hard to get wrong: reading a days-old snapshot as the
+current status, sending a tracking number to couriers that don't own it, and losing track of which
+number was which parcel. Each one changes default behavior, so this release has breaking changes.
+
+### Breaking
+- **A bare number is no longer tried against every matching courier.** When neither the number's
+  format nor the local record identifies the courier, the CLI sends nothing, lists the candidate
+  couriers, and exits with code `8`. Pass `--carrier <code>` to query one, or `--auto` to consent
+  to trying them in turn (the previous default). Formats that identify a single courier (SPX's
+  `TW…`) and numbers already in the local record still go straight to that courier. For agents:
+  exit 8 means "ask the user which courier"; relay the candidate list, and add `--auto` only when
+  the user agrees to the number being sent to all of them.
+- **When the recorded courier fails to answer** (timeout, missing Playwright, parse error), the CLI
+  now reports that error with exit 3/4/5 instead of falling back to the other couriers. Only an
+  explicit "not found" from the recorded courier can lead to asking the others, and that also
+  needs `--auto`.
+- **`--refresh-pending` never calls 17TRACK**, even when an API key is set. A key in the
+  environment is not consent for a particular batch. Such entries are reported as 已略過 with the
+  command to query them one at a time.
+- **`--refresh-pending` exits with `6`** when any parcel failed to query or its snapshot could not
+  be saved (it used to exit 0).
+- **`--history` / `--pending` print multi-line blocks** and show only the last four digits of each
+  number by default (`--full-numbers` shows them in full).
+- **`--forget` / `--forget-all` exit with `7`** when the local files could not be fully updated.
+
+The JSON of a single lookup (`track.py <number> --json`) has the same shape as before. Commands that
+used to ignore `--json` (`--history`, `--pending`, `--refresh-pending`, `--forget`) now print a JSON
+envelope; see the README.
+
+### Added
+- **Parcel names**: `--label` names a parcel when you look it up, `--rename` / `--clear-label`
+  change or remove a name, and `--find` looks parcels up by name or number. Names are stored only
+  on this machine, in `labels.json` next to `history.json`. When several parcels match, all of
+  them are listed with exit 8; the CLI never picks one for you.
+- **Snapshot timestamps**: snapshot listings now say 本機歷史快照；未連線, and show the courier's
+  latest event time and the time this tool last checked as two separate lines. A snapshot more
+  than 7 days old is marked 資料可能過期. A live lookup ends with 查詢時間 …（剛剛即時查詢）.
+- **Narrower refreshes**: `--refresh-pending` accepts `--match <name>` (with `--all-matches` to
+  confirm several matches), `--carrier`, `--limit N`, and `--dry-run`. The digest shows each
+  change as before → after, and a failed query says which earlier snapshot is still kept.
+- **JSON envelopes** (`schema_version: 1`) for `--history`, `--pending`, `--find`,
+  `--refresh-pending`, `--rename`, `--clear-label`, `--forget`, `--forget-all`, and the
+  courier-selection result. Errors from these commands are envelopes too; for them stdout holds
+  exactly one JSON document, and messages go to stderr. Errors of a single lookup are still plain
+  text, as before.
+- **A write lock** for the local files. A second process that tries to write while another is
+  writing fails at once: name and delete commands exit 7, a plain lookup still prints its result
+  and exits 0 with a note on stderr, and `--refresh-pending` counts it toward exit 6. The lock is
+  an OS file lock, so a killed process never leaves it behind.
+
+### Fixed
+- **`--auto --json` could print a "skipped" note on stdout** before the JSON when one courier
+  failed, which made the output unparseable. Those notes go to stderr in JSON mode.
+- **A corrupt `history.json` was overwritten by the next successful lookup**, which silently
+  discarded every record in it. The next lookup now keeps it as `history.json.corrupt-<time>`
+  and starts a new record. `--forget` on a corrupt file changes nothing and exits 7, rather than
+  moving the number aside and reporting it deleted.
+
+### Notes
+- 369 offline unit tests.
+
 ## [0.4.0] - 2026-08-11
 
 `--pending` could say what a parcel last reported. It could not say what it reports now — and

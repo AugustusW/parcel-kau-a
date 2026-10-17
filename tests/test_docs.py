@@ -6,7 +6,8 @@ release at a time, silently. These tests read them out of the README and
 compare them against the CHANGELOG and against what pytest actually collects,
 so a stale claim is a red suite instead of a wrong page.
 
-The zh-TW README carries no Status numbers, so only the English one is read.
+README.zh-TW.md carries the same Status line in Chinese and drifted on its
+own (it said 197 while the English one said 199), so both are read.
 """
 import re
 import subprocess
@@ -15,12 +16,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
+README_ZH = ROOT / "README.zh-TW.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
 
 # Anchored on the CHANGELOG link so that version mentions elsewhere in the
 # README (feature history, examples) can never be mistaken for the Status one.
 STATUS_VERSION_RE = re.compile(r"v(\d+\.\d+\.\d+)\s*[（(]\[CHANGELOG\]")
 TEST_COUNT_RE = re.compile(r"(\d+) offline unit tests")
+ZH_STATUS_VERSION_RE = re.compile(r"v(\d+\.\d+\.\d+)[（(]\[CHANGELOG\]")
+ZH_TEST_COUNT_RE = re.compile(r"(\d+) 個離線單元測試")
 CHANGELOG_ENTRY_RE = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.M)
 
 
@@ -63,4 +67,20 @@ def test_readme_test_count_matches_what_pytest_collects():
     assert not wrong, (
         f"README.md states {wrong} test(s) but the suite collects {collected}; "
         "update every count in the file"
+    )
+
+
+def test_zh_readme_status_matches_the_english_one():
+    zh = _read(README_ZH)
+    zh_versions = ZH_STATUS_VERSION_RE.findall(zh)
+    assert len(zh_versions) == 1, (
+        f"README.zh-TW.md has {len(zh_versions)} Status version lines; keep exactly one"
+    )
+    assert zh_versions == STATUS_VERSION_RE.findall(_read(README))
+    stated = ZH_TEST_COUNT_RE.findall(zh)
+    assert stated, "README.zh-TW.md states no test count"
+    collected = _collected_count()
+    wrong = sorted({int(n) for n in stated if int(n) != collected})
+    assert not wrong, (
+        f"README.zh-TW.md states {wrong} test(s) but the suite collects {collected}"
     )
