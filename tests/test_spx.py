@@ -42,19 +42,60 @@ def test_missing_browser_binary_degrades_with_install_hint(monkeypatch):
     assert "playwright install chromium" in str(e.value)
 
 
-def test_parse_timeline_rows_from_rendered_text():
-    rows = [
-        {"time": "2026-08-01 09:12", "status": "已送達門市", "location": "台北中山店"},
-        {"time": "2026-07-31 18:40", "status": "運送中", "location": None},
-    ]
-    result = spx_mod.build_result(rows, number="TW254414081298F")
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def _fixture(name):
+    import json
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def test_real_api_response_is_parsed():
+    """2026-10-18 真實包裹的 API 回應（去識別化）。v0.5.1 以前用正則找畫面上的
+    YYYY-MM-DD，真實頁面是「時間」與「07 Oct 2026」分兩行，所以每一件都被判成查無資料。"""
+    result = spx_mod.parse_api(200, _fixture("spx_api_found.json"), "TW0000000000002")
     assert result.found is True
-    assert result.latest.status == "已送達門市"
+    assert len(result.events) == 8
+    assert result.latest.status == "買家取件成功"
+    assert result.latest.time == "2026/10/07 09:27"
+    assert [e.time for e in result.events][-1] == "2026/10/05 19:48"
 
 
-def test_empty_timeline_is_not_found():
-    result = spx_mod.build_result([], number="TW254414081298F")
-    assert result.found is False
+def test_timestamps_are_rendered_in_taiwan_time_regardless_of_host_timezone(monkeypatch):
+    monkeypatch.setenv("TZ", "UTC")
+    import time
+    if hasattr(time, "tzset"):
+        time.tzset()
+    try:
+        result = spx_mod.parse_api(200, _fixture("spx_api_found.json"), "TW0000000000002")
+        assert result.latest.time == "2026/10/07 09:27"
+    finally:
+        monkeypatch.delenv("TZ")
+        if hasattr(time, "tzset"):
+            time.tzset()
+
+
+def test_not_found_response_is_not_found():
+    """站方對不存在的單號回 retcode -1000、訊息「Server error」、data 為空。"""
+    result = spx_mod.parse_api(200, _fixture("spx_api_not_found.json"), "TW0000000000001")
+    assert result.found is False and result.events == []
+
+
+def test_risk_control_block_is_reported_not_disguised_as_not_found():
+    with pytest.raises(CarrierUnavailable) as e:
+        spx_mod.parse_api(403, _fixture("spx_api_blocked.json"), "TW0000000000001")
+    message = str(e.value)
+    assert "擋下" in message and "--via-17track" in message
+
+
+def test_unexpected_response_is_a_parse_error():
+    from carriers.base import ParseError
+    with pytest.raises(ParseError):
+        spx_mod.parse_api(200, {"retcode": 0, "data": {"tracking_list": "oops"}}, "TW1")
+    with pytest.raises(ParseError):
+        spx_mod.parse_api(500, None, "TW1")
+    with pytest.raises(ParseError):
+        spx_mod.parse_api(200, {"retcode": 12345, "data": {}}, "TW1")
 
 
 def test_dom_change_becomes_parse_error_not_traceback(monkeypatch):

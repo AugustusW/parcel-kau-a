@@ -102,6 +102,11 @@ pip install playwright && playwright install chromium
 
 未安裝時只有 `spx` 不可用，其他五家照常。CLI 會直接告訴使用者缺哪一步。
 
+**2026-10 起蝦皮的風控會擋下無頭瀏覽器的查詢**，CLI 會回「蝦皮擋下了這次自動查詢」（結束碼 3）。Agent 的處理方式：
+- 照實轉述被擋，**不要說成查無資料**，也**不要嘗試任何繞過方式**（改瀏覽器特徵、逆向簽章、換 IP 等）
+- 提供兩條路讓使用者選：自己用瀏覽器開 https://spx.tw/ 查；或自備 17TRACK key 走 `--carrier spx --via-17track`（單號會送到 17TRACK，要使用者明確同意）
+- 如果 Agent 有權限操作使用者自己的瀏覽器，經使用者同意後可以代為在 spx.tw 查詢
+
 ## 查詢紀錄（v0.2.0 起）
 
 **直連**查到結果時會記下「單號→哪家貨運」到 `~/.cache/parcel-kau-a/history.json`（權限 600）。走 `--via-17track` 不記錄（記成 17track 會讓下次去打付費 API）。

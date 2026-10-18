@@ -1543,3 +1543,13 @@ def test_far_future_event_does_not_say_today(monkeypatch, hist_home, capsys):
     track.run(["--pending"])
     out = capsys.readouterr().out
     assert "今天有新進度" not in out and f"物流事件：{future}" in out
+
+
+def test_a_single_format_candidate_reports_errors_like_an_explicit_carrier(monkeypatch, capsys):
+    """格式只符合一家（例如蝦皮 TW 開頭）＝實際上就是指定了那一家：用不了是 exit 3，
+    不是「查詢未完成」的 exit 5（v0.5.1 以前蝦皮被風控擋下時就是這樣誤導）。"""
+    err = CarrierUnavailable("蝦皮擋下了這次自動查詢")
+    monkeypatch.setattr(track, "CARRIERS", {"tcat": FakeAdapter("tcat", detects=False),
+                                            "spx": FakeAdapter("spx", raises=err)})
+    assert track.run(["TW0000000000002"]) == 3
+    assert "蝦皮擋下了這次自動查詢" in capsys.readouterr().out

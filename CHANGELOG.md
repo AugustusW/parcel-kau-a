@@ -3,6 +3,33 @@
 All notable changes to this project are documented here. Every release adds an entry below and
 is tagged in git; the version lives here and in the git tag (SKILL.md carries no version field).
 
+## [0.5.2] - 2026-10-18
+
+The SPX (蝦皮店到店) adapter had never been run against a real parcel, and the first real one
+showed it could not have worked.
+
+### Fixed
+- **SPX results are read from the JSON of the page's own tracking request**, not from text on the
+  rendered page. The old parser looked for `YYYY-MM-DD HH:MM`, while the page shows the time and a
+  date such as `07 Oct 2026` on separate lines, so every real parcel came back as not found.
+  Event times come from the response's Unix timestamps and are shown in Taiwan time.
+- **SPX's bot protection is reported as such.** SPX currently answers a headless browser's
+  tracking request with HTTP 403. The CLI now says that SPX blocked the automated lookup and
+  suggests checking spx.tw in a browser or `--carrier spx --via-17track`, instead of reporting
+  "not found". This tool does not try to get around the block.
+- **A number whose format fits only one courier** (such as SPX's `TW…`) now reports that courier's
+  errors with the same exit codes as `--carrier` (3 for unavailable, 4 for a changed page), instead
+  of exit 5 "lookup not completed".
+
+### Changed
+- The README's robots.txt statement for SPX is now precise: the address bar changes to
+  `spx.tw/detail/<number>` after a result loads, but that is the page's own in-browser routing,
+  and no request for `/detail/` is sent to SPX's server.
+
+### Notes
+- 398 offline unit tests. SPX fixtures (`tests/fixtures/spx_api_*.json`) are real responses
+  captured on 2026-10-18 with the parcel's number replaced.
+
 ## [0.5.1] - 2026-10-18
 
 Follow-ups from the v0.5.0 review that were deferred at release.
