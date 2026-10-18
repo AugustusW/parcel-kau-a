@@ -194,8 +194,10 @@ In Claude Code you don't call the script yourself — say *"查一下這個黑�
 
 A name is attached to a number when you look it up with `--label`, and only if the courier found
 it (nothing is saved for a not-found result). After that, `--find` looks parcels up by full
-number, exact name, or part of a name, in that order of preference. `--find` and the name commands
-never contact a courier.
+number, the end of a number (at least 4 characters, so the 末四碼 shown in lists works), exact
+name, or part of a name, in that order of preference. `--find` and the name commands never
+contact a courier. A name whose record is gone (for example after a corrupt `history.json` was set
+aside) is still found, marked 只剩名稱, and `--history` counts such names at the end.
 
 ```text
 找到 2 個名稱相近的包裹（本機歷史快照；未連線）
@@ -239,13 +241,16 @@ with `--json`, and every error from those commands, prints one envelope:
    "latest_status": "配送中", "event_time": "2026/10/16 14:20",
    "event_at": "2026-10-16T14:20:00+08:00", "event_timezone": "+08:00",
    "checked_at": "2026-10-16T15:03:00+08:00", "checked_age_seconds": 86400,
-   "freshness": "recent", "source_type": "official-http",
-   "past_retention": false, "looks_complete": false}]}
+   "freshness": "recent", "checked_problem": null, "source_type": "official-http",
+   "past_retention": false, "looks_complete": false, "record_missing": false}],
+ "orphan_labels": 0}
 ```
 
 `operation` is one of `history`, `pending`, `find`, `refresh_pending`, `detect` (courier
 selection), `rename`, `clear_label`, `forget`, `forget_all`, or `error`. `freshness` is `fresh`
-(under 24 h), `recent` (under 7 days), `stale`, or `unknown`. `event_at` is filled in only when the
+(under 24 h), `recent` (under 7 days), `stale`, or `unknown`; when it is `unknown`,
+`checked_problem` says why (`unparseable` or `future`). `record_missing` marks a name whose record
+is gone, and `orphan_labels` counts them in `history` / `pending`. `event_at` is filled in only when the
 courier's time zone is known. `refresh_pending` adds `attempted_at`, `counts`, `partial_failure`,
 and per-parcel `outcomes` with `query_succeeded` and `snapshot_saved` reported separately. Errors
 carry `"ok": false` and `exit_code`. For these commands stdout holds exactly one JSON document, and
@@ -269,18 +274,23 @@ Every conflict exits with `2` before anything is sent.
 
 ## Coverage
 
-| Courier | `--carrier` | Method | Retention |
-|---|---|---|---|
-| 黑貓宅急便 T-cat | `tcat` | HTTP (ASP.NET postback → detail page) | 3 months |
-| 嘉里大榮 Kerry TJ | `kerrytj` | HTTP JSON API | — |
-| 台灣宅配通 e-can | `ecan` | HTTP (Big5-encoded classic ASP) | 2 months |
-| 網家速配 PChome Express | `pchome` | HTTP (server-rendered page, number in the URL path) | — |
-| 富昇物流 Fusheng (momo) | `fusheng` | HTTP (server-rendered page, number in the query string) | — |
-| 蝦皮店到店 SPX | `spx` | Playwright (headless) | — |
+| Courier | `--carrier` | Official tracking page | How this tool reads it | Retention |
+|---|---|---|---|---|
+| 黑貓宅急便 T-cat | `tcat` | [t-cat.com.tw](https://www.t-cat.com.tw/Inquire/Trace.aspx) | HTTP (ASP.NET postback → detail page) | 3 months |
+| 嘉里大榮 Kerry TJ | `kerrytj` | [kerrytj.com](https://www.kerrytj.com/zh/checking) | HTTP JSON API | — |
+| 台灣宅配通 e-can | `ecan` | [query2.e-can.com.tw](https://query2.e-can.com.tw/%E5%A4%9A%E7%AD%86%E6%9F%A5%E4%BB%B6A.htm) | HTTP (Big5-encoded classic ASP) | 2 months |
+| 網家速配 PChome Express | `pchome` | [gopchome.com.tw](https://www.gopchome.com.tw/) | HTTP (server-rendered page, number in the URL path) | — |
+| 富昇物流 Fusheng (momo) | `fusheng` | [tmsvendor.fs.com.tw](https://tmsvendor.fs.com.tw/search) | HTTP (server-rendered page, number in the query string) | — |
+| 蝦皮店到店 SPX | `spx` | [spx.tw](https://spx.tw/) | Playwright (headless) | — |
+| 中華郵政 Chunghwa Post | `chunghwa-post` | [postserv.post.gov.tw](https://postserv.post.gov.tw/pstmail/main_mail.html) | Official form has a CAPTCHA; [17TRACK](#17track-optional) only | — |
+| 全家店到店 FamilyMart | `famiport` | [fmec.famiport.com.tw](https://fmec.famiport.com.tw/FP_Entrance/QueryBox) | Official form has a CAPTCHA; [17TRACK](#17track-optional) only | — |
+| 7-ELEVEN 交貨便 | `seven-eleven` | [eservice.7-11.com.tw](https://eservice.7-11.com.tw/e-tracking/search.aspx) | Official form has a CAPTCHA; [17TRACK](#17track-optional) only | — |
+| 新竹物流 HCT | `hct` | [cagweb01.hct.com.tw](https://cagweb01.hct.com.tw/search/searchgoods.aspx) | Official form has a CAPTCHA; [17TRACK](#17track-optional) only | — |
 
-**Not readable directly, and why:** 中華郵政, 全家店到店, 7-ELEVEN 交貨便, and 新竹物流 all put a
-CAPTCHA on their tracking form. This skill does not attempt CAPTCHA solving. They are reachable
-through the optional [17TRACK bridge](#17track-optional) below.
+The first six are read directly from the courier's own public page. This skill does not attempt
+CAPTCHA solving, so the last four are reachable only through the optional
+[17TRACK bridge](#17track-optional) with your own API key, and their `--carrier` codes work only
+together with `--via-17track`. Links were checked in 2026-10.
 
 ## 17TRACK (optional)
 
@@ -541,7 +551,7 @@ intercept, so calibrating it still means opening browser devtools by hand.
 
 ## Status
 
-v0.5.0 ([CHANGELOG](./CHANGELOG.md)) — 369 offline unit tests. Verification status differs per
+v0.5.1 ([CHANGELOG](./CHANGELOG.md)) — 394 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | Method | not-found path | found path | Last verified |

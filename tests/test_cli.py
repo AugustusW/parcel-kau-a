@@ -1465,3 +1465,81 @@ def test_match_plus_carrier_mismatch_does_not_blame_the_name(monkeypatch, hist_h
     assert track.run(["--refresh-pending", "--match", "耳機", "--carrier", "ecan"]) == 0
     out = capsys.readouterr().out
     assert "沒有符合條件的未結案包裹" in out and "--carrier ecan" in out
+
+
+
+# ── v0.5.1 延後項目 ────────────────────────────────────────────────────
+
+def test_find_accepts_the_last_four_digits(hist_home, capsys):
+    _remember("900000000001", "配送中")
+    _remember("900000000002", "配送中")
+    assert track.run(["--find", "0001"]) == 0
+    out = capsys.readouterr().out
+    assert "單號末四碼：0001" in out and "單號末四碼：0002" not in out
+
+
+def test_find_by_last_four_digits_lists_every_collision(hist_home):
+    _remember("900000000001", "配送中")
+    _remember("800000000001", "配送中")
+    assert track.run(["--find", "0001"]) == 8
+
+
+def test_retention_hint_names_the_parcel_and_how_to_see_its_number(monkeypatch, hist_home, capsys):
+    import carriers
+    monkeypatch.setitem(carriers.CARRIER_META["tcat"], "retention_days", 10)
+    _remember("900000000001", "配送中", event_time="2026/01/01 10:00")
+    track.run(["--pending"])
+    out = capsys.readouterr().out
+    line = next(ln for ln in out.splitlines() if "保留期" in ln)
+    assert "末四碼 0001" in line and "--full-numbers" in line
+
+
+def _orphan_name():
+    import labels
+    _remember("900000000001", "配送中")
+    labels.set_label("900000000001", "耳機")
+    labels.set_label("900000000009", "孤兒耳機")   # 紀錄已不存在，只剩名稱
+
+
+def test_find_still_finds_names_whose_record_is_gone(hist_home, capsys):
+    _orphan_name()
+    assert track.run(["--find", "孤兒"]) == 0
+    out = capsys.readouterr().out
+    assert "孤兒耳機" in out and "只剩名稱，查詢紀錄已不存在" in out
+
+
+def test_find_json_marks_orphan_names(hist_home, capsys):
+    _orphan_name()
+    track.run(["--find", "孤兒", "--json"])
+    match = json.loads(capsys.readouterr().out)["matches"][0]
+    assert match["record_missing"] is True and match["number"] == "900000000009"
+
+
+def test_history_mentions_orphan_names_and_how_to_clear_them(hist_home, capsys):
+    _orphan_name()
+    track.run(["--history"])
+    out = capsys.readouterr().out
+    assert "另有 1 個名稱沒有對應的查詢紀錄" in out
+    assert "--clear-label" in out and "--forget-all" in out
+
+
+def test_history_has_no_orphan_note_when_there_are_none(hist_home, capsys):
+    _remember("900000000001", "配送中")
+    track.run(["--history"])
+    assert "沒有對應的查詢紀錄" not in capsys.readouterr().out
+
+
+def test_unparseable_checked_time_is_not_blamed_on_the_clock(monkeypatch, hist_home, capsys):
+    _remember("900000000001", "配送中")
+    _set_checked("900000000001", "2026-10-16T15:03:00")   # 少了時區
+    track.run(["--pending"])
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("上次查詢："))
+    assert "時間格式無法判讀" in line and "本機時間異常" not in line
+
+
+def test_far_future_event_does_not_say_today(monkeypatch, hist_home, capsys):
+    future = (datetime.now() + timedelta(days=3)).strftime("%Y/%m/%d %H:%M")
+    _remember("900000000001", "配送中", event_time=future)
+    track.run(["--pending"])
+    out = capsys.readouterr().out
+    assert "今天有新進度" not in out and f"物流事件：{future}" in out

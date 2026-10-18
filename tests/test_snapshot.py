@@ -114,3 +114,17 @@ def test_every_registered_carrier_has_complete_metadata():
 
 def test_17track_never_takes_part_in_auto_detection():
     assert carriers.CARRIER_META["17track"]["auto_detect_allowed"] is False
+
+
+@pytest.mark.parametrize("checked,problem", [
+    ("2026-10-17T10:00:00", "unparseable"), ("不是時間", "unparseable"), (123, "unparseable"),
+    (_at(hours=-3), "future"), (None, None), (_at(hours=1), None)])
+def test_checked_problem_distinguishes_format_from_clock(checked, problem):
+    v = snapshot.view("1", {"last_checked": checked}, label=None, now=NOW)
+    assert v["checked_problem"] == problem
+
+
+def test_view_marks_records_that_only_survive_as_a_name():
+    v = snapshot.view("1", {}, label="耳機", now=NOW, record_missing=True)
+    assert v["record_missing"] is True
+    assert snapshot.view("1", {}, label=None, now=NOW)["record_missing"] is False

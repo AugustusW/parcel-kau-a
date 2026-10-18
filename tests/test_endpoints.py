@@ -144,6 +144,9 @@ def test_no_file_read_or_write_relies_on_the_platform_default_encoding():
             kwargs = {k.arg for k in node.keywords}
             if "encoding" in kwargs:
                 continue
+            if (name == "open" and isinstance(node.func, ast.Attribute)
+                    and getattr(node.func.value, "id", "") == "os"):
+                continue                  # os.open 回傳 fd，不經過文字編碼
             if name == "open":
                 mode = next((a.value for a in node.args[1:2]
                              if isinstance(a, ast.Constant)), "r")

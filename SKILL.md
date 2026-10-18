@@ -18,7 +18,7 @@ python3 scripts/track.py <單號>                      # 格式或紀錄能唯�
 python3 scripts/track.py <單號> --auto               # 使用者同意後：依序詢問所有格式相符的物流商
 python3 scripts/track.py <單號> --carrier tcat --label "momo 耳機"   # 查到後幫這筆取名稱
 python3 scripts/track.py <單號> --json               # 機器可讀輸出
-python3 scripts/track.py --find 耳機                 # 用名稱找包裹（不連線）
+python3 scripts/track.py --find 耳機                 # 用名稱或單號尾碼（例如 0001）找包裹（不連線）
 python3 scripts/track.py --rename <單號> "新名稱"     # 改名稱（不連線）
 python3 scripts/track.py --clear-label <單號>        # 清除名稱（不連線）
 python3 scripts/track.py --pending                   # 只列尚未結案的包裹（不連線）
@@ -122,6 +122,8 @@ pip install playwright && playwright install chromium
 - 「把這個單號命名為耳機」→ `<單號> --carrier <code> --label 耳機`（查到結果才會存名稱；查無資料不存）
 - 「改名」→ `--rename <單號> 新名稱`；「拿掉名稱」→ `--clear-label <單號>`；兩者都不連線
 - 已有名稱時再 `--label` 會覆蓋舊名稱，CLI 會印出「已將名稱從「舊」改為「新」」
+- 使用者只記得末四碼（列表上顯示的）→ `--find 0001`；撞號時同樣列出全部讓使用者選
+- `--find` 結果標「只剩名稱，查詢紀錄已不存在」→ 告訴使用者那筆紀錄已遺失，可用 `--clear-label` 清掉名稱，或重新查一次單號
 - 「查一下耳機那個包裹」→ 先跑 `--find 耳機`（不連線）：
   - 找不到 → 告訴使用者，不要改用別的關鍵字亂試
   - 1 筆 → 轉述那筆快照；使用者要現況就用那筆的物流商查一次
