@@ -1,0 +1,91 @@
+{
+  "retcode": 0,
+  "message": "",
+  "data": {
+    "sls_tracking_number": "TW0000000000002",
+    "need_translate": 1,
+    "delivery_type": "AIRPAY_CC",
+    "recipient_name": "",
+    "phone": "",
+    "current_status": "Delivered",
+    "tracking_list": [
+      {
+        "timestamp": 1791336467,
+        "status": "Delivered",
+        "message": "買家取件成功"
+      },
+      {
+        "timestamp": 1791333342,
+        "status": "Delivering",
+        "message": "您的包裹配送中"
+      },
+      {
+        "timestamp": 1791294030,
+        "status": "SP_HD_Received",
+        "message": "包裹抵達營業所/服務據點"
+      },
+      {
+        "timestamp": 1791244308,
+        "status": "SOC_Received",
+        "message": "包裹抵達理貨中心，處理中"
+      },
+      {
+        "timestamp": 1791216335,
+        "status": "SOC_Received",
+        "message": "包裹抵達理貨中心，處理中"
+      },
+      {
+        "timestamp": 1791212509,
+        "status": "SP_LHTransporting",
+        "message": "包裹送往理貨中心"
+      },
+      {
+        "timestamp": 1791209212,
+        "status": "DOP_Received",
+        "message": "賣家已寄件成功"
+      },
+      {
+        "timestamp": 1791200894,
+        "status": "Created",
+        "message": "賣家將於確認訂單後出貨"
+      }
+    ],
+    "status_list": [
+      {
+        "timestamp": 1791200894,
+        "code": 1,
+        "text": "Order Created",
+        "state_ls": "Created",
+        "icon": "Order Created"
+      },
+      {
+        "timestamp": 1791216335,
+        "code": 1,
+        "text": "Picked Up",
+        "state_ls": "Pending_Receive",
+        "icon": "Picked Up"
+      },
+      {
+        "timestamp": 1791216335,
+        "code": 1,
+        "text": "Sorting",
+        "state_ls": "Pending",
+        "icon": "Sorting"
+      },
+      {
+        "timestamp": 1791333342,
+        "code": 1,
+        "text": "Courier Delivery",
+        "state_ls": "TW_Delivering",
+        "icon": "Courier Delivery"
+      },
+      {
+        "timestamp": 1791336467,
+        "code": 1,
+        "text": "Delivered",
+        "state_ls": "TW_Delivered",
+        "icon": "Delivered"
+      }
+    ]
+  }
+}

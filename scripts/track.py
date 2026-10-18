@@ -924,6 +924,8 @@ def run(argv: list[str]) -> int:
     last: tuple[TrackResult, str] | None = None
     errors: list[str] = []
     asked: list[str] = []
+    # 只有一家可問（指定了 --carrier，或格式只符合一家）時，這家的錯誤就是整次查詢的錯誤
+    single = bool(args.carrier) or len(codes) == 1
     for code in codes:
         adapter = CARRIERS[code]
         asked.append(adapter.name)
@@ -932,14 +934,14 @@ def run(argv: list[str]) -> int:
         except CarrierUnavailable as e:
             # 指定單一貨運時這是致命錯（使用者就是要查那家）；自動／退回模式下
             # 只是「這家用不了」，該繼續問其他家——否則會違背剛印出的「改試其餘 N 家」。
-            if args.carrier:
-                print(str(e))
+            if single:
+                print(f"{adapter.name}：{e}")
                 return 3
             errors.append(f"{adapter.name}：{e}")
             continue
         except ParseError as e:
             # 撞號情境下，某家改版不該埋掉其他家的有效結果；單家指定時才視為錯誤
-            if args.carrier:
+            if single:
                 print(f"{adapter.name}：{e}")
                 return 4
             errors.append(f"{adapter.name}：{e}")

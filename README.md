@@ -406,8 +406,11 @@ shape. The couriers are not similar under the hood:
 - **PChome Express** and **Fusheng** are the simplest of the six: a server-rendered page with the number in the
   URL path, no form round-trip at all.
 - **SPX** signs its tracking API with a token computed in browser JavaScript. Rather than reverse
-  that signature (which would break on their next deploy), the adapter drives a headless browser
-  and lets their own page produce it.
+  that signature (which would break on their next deploy), the adapter drives a headless browser,
+  lets their own page produce it, and reads the JSON that their page's own request gets back.
+  **As of 2026-10, SPX answers that request from a headless browser with HTTP 403 (bot
+  protection).** This tool does not try to get around it: it reports that SPX blocked the
+  automated lookup and suggests opening spx.tw in your browser or `--carrier spx --via-17track`.
 
 ## Privacy
 
@@ -462,8 +465,10 @@ shape. The couriers are not similar under the hood:
 - **Kerry TJ's own form asks you to accept their legal/privacy notice before searching.** This
   tool calls the underlying endpoint directly and therefore does not surface that checkbox —
   by using it you take on responsibility for complying with their terms.
-- **SPX**: only the public search box on `spx.tw/` is used; paths disallowed in their robots.txt
-  are not visited.
+- **SPX**: only the public search box on `spx.tw/` is used. After a result loads, the address bar
+  shows `spx.tw/detail/<number>`, a path their robots.txt disallows; that change is made by the page
+  itself in the browser, and no request for `/detail/` is sent to their server (checked by logging
+  every request, 2026-10-18). Their bot protection currently blocks headless lookups (see above).
 - Each courier's own retention limit applies (see [Coverage](#coverage)) — older parcels return
   "not found" from the site itself, not from this skill.
 
@@ -545,13 +550,14 @@ replaces the real tracking number and scrubs phone numbers, ID-number-shaped str
 addresses, and common Taiwan address patterns with conservative regexes. It does **not** attempt
 to detect Chinese personal names — a 2-4 character Chinese name has no reliable regex signature
 that would not also match ordinary status text, so that check is left to you entirely. **Open the
-captured file and read it before running `git add` on it.** SPX is not supported here: it scrapes
-a rendered page via Playwright rather than returning a single HTTP response this tool can
-intercept, so calibrating it still means opening browser devtools by hand.
+captured file and read it before running `git add` on it.** SPX is not supported here: its response
+can only be obtained inside a Playwright-driven page (the request carries a signature computed by
+their JavaScript), which this tool does not drive. The SPX fixtures were captured by hand; see
+`tests/fixtures/spx_api_notes.md`.
 
 ## Status
 
-v0.5.1 ([CHANGELOG](./CHANGELOG.md)) — 394 offline unit tests. Verification status differs per
+v0.5.2 ([CHANGELOG](./CHANGELOG.md)) — 398 offline unit tests. Verification status differs per
 courier and is worth stating precisely:
 
 | Courier | Method | not-found path | found path | Last verified |
@@ -561,7 +567,7 @@ courier and is worth stating precisely:
 | 台灣宅配通 e-can | official page, HTTP | verified against live response | synthetic fixture (real headers, row values unverified) | 2026-08 |
 | 網家速配 PChome | official page, HTTP | verified against live response | synthetic fixture (real class structure, values unverified) | 2026-08 |
 | 富昇物流 Fusheng | official page, HTTP | verified against live response | **verified** — real parcel, 4-event history, 2026-08-02 | 2026-08 |
-| 蝦皮 SPX | official page, Playwright | — | DOM selectors from a live page snapshot; not yet run against a real parcel | 2026-08 |
+| 蝦皮 SPX | official page, Playwright | verified — real response from a fake number, 2026-10-18 | **verified** — real parcel's API response, 2026-10-18; **headless lookups currently blocked by SPX (HTTP 403)** | 2026-10 |
 | 中華郵政／全家／7-ELEVEN／新竹 | 17TRACK (optional) | official pages have a CAPTCHA | 17TRACK documented schema only | 2026-08 |
 
 "Last verified" is when the maintainer last confirmed the adapter or the courier's page flow, not
